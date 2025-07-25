@@ -62,6 +62,21 @@ try {
 } catch (e) {
   // Column already exists
 }
+try {
+  db.exec(`ALTER TABLE accounts ADD COLUMN input_tokens_window INTEGER DEFAULT 0`)
+} catch (e) {
+  // Column already exists
+}
+try {
+  db.exec(`ALTER TABLE accounts ADD COLUMN output_tokens_window INTEGER DEFAULT 0`)
+} catch (e) {
+  // Column already exists
+}
+try {
+  db.exec(`ALTER TABLE accounts ADD COLUMN estimated_quota_remaining REAL DEFAULT 1.0`)
+} catch (e) {
+  // Column already exists
+}
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS requests (
@@ -74,9 +89,46 @@ db.exec(`
     success BOOLEAN,
     error_message TEXT,
     response_time_ms INTEGER,
-    failover_attempts INTEGER DEFAULT 0
+    failover_attempts INTEGER DEFAULT 0,
+    input_tokens INTEGER,
+    output_tokens INTEGER,
+    model_used TEXT
   )
 `)
+
+// Add new columns to existing requests table
+try {
+  db.exec(`ALTER TABLE requests ADD COLUMN input_tokens INTEGER`)
+} catch (e) {
+  // Column already exists
+}
+try {
+  db.exec(`ALTER TABLE requests ADD COLUMN output_tokens INTEGER`)
+} catch (e) {
+  // Column already exists
+}
+try {
+  db.exec(`ALTER TABLE requests ADD COLUMN model_used TEXT`)
+} catch (e) {
+  // Column already exists
+}
+
+// Create configuration table for settings
+db.exec(`
+  CREATE TABLE IF NOT EXISTS config (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    updated_at INTEGER NOT NULL
+  )
+`)
+
+// Set default load balancing strategy
+try {
+  const configStmt = db.prepare(`INSERT OR IGNORE INTO config (key, value, updated_at) VALUES (?, ?, ?)`)
+  configStmt.run('load_balance_strategy', 'dynamic', Date.now())
+} catch (e) {
+  // Config already exists
+}
 
 // Create index for faster queries
 db.exec(`CREATE INDEX IF NOT EXISTS idx_requests_timestamp ON requests(timestamp DESC)`)
@@ -99,6 +151,9 @@ interface Account {
   supported_models: string
   usage_window_start: number | null
   usage_window_requests: number
+  input_tokens_window: number
+  output_tokens_window: number
+  estimated_quota_remaining: number
 }
 
 // Model configuration
@@ -218,40 +273,102 @@ async function getValidAccessTokenWithRetry(account: Account): Promise<string> {
 }
 
 function getAvailableAccounts(): Account[] {
-  // Hybrid algorithm: Ticker Starter + Reset Prioritizer + Load Balancer
-  const stmt = db.prepare(`
-    SELECT * FROM accounts 
-    ORDER BY 
-      -- Phase 1: Round Robin - Start all tickers (highest priority)
-      CASE WHEN usage_window_start IS NULL THEN 0
-           WHEN (? - usage_window_start) >= ? THEN 0  -- Expired windows ready to restart
-           ELSE 2 END,
-      -- Phase 2: Reset Prioritizer - Use accounts closest to reset (1 hour remaining)
-      CASE WHEN usage_window_start IS NOT NULL AND (? - usage_window_start) >= ? THEN 1
-           ELSE 2 END,
-      -- Phase 3: Load Balance - Even distribution within active windows
-      usage_window_requests ASC,
-      request_count ASC,
-      last_used ASC NULLS FIRST,
-      -- Phase 4: Random tiebreaker for truly equal accounts
-      RANDOM()
-  `)
+  // Get current load balancing strategy from config
+  const configStmt = db.prepare(`SELECT value FROM config WHERE key = ?`)
+  const strategyRow = configStmt.get('load_balance_strategy') as any
+  const strategy = strategyRow?.value || 'dynamic'
+  
   const FIVE_HOURS_MS = 5 * 60 * 60 * 1000
-  const FOUR_HOURS_MS = 4 * 60 * 60 * 1000  // Prioritize accounts with <1 hour remaining
+  const FOUR_HOURS_MS = 4 * 60 * 60 * 1000
   const now = Date.now()
-  const accounts = stmt.all(now, FIVE_HOURS_MS, now, FOUR_HOURS_MS) as Account[]
+  
+  let stmt: any
+  let accounts: Account[]
+  
+  switch (strategy) {
+    case 'round_robin':
+      // Original: Start all accounts simultaneously
+      stmt = db.prepare(`
+        SELECT * FROM accounts 
+        ORDER BY 
+          CASE WHEN usage_window_start IS NULL THEN 0
+               WHEN (? - usage_window_start) >= ? THEN 0
+               ELSE 2 END,
+          usage_window_requests ASC,
+          request_count ASC,
+          last_used ASC NULLS FIRST,
+          RANDOM()
+      `)
+      accounts = stmt.all(now, FIVE_HOURS_MS) as Account[]
+      break
+      
+    case 'sequential':
+      // Sequential: Use one account until exhausted, then next
+      stmt = db.prepare(`
+        SELECT * FROM accounts 
+        ORDER BY 
+          -- Prioritize active windows first
+          CASE WHEN usage_window_start IS NOT NULL AND (? - usage_window_start) < ? THEN 0
+               ELSE 1 END,
+          -- Then accounts ready to start
+          CASE WHEN usage_window_start IS NULL THEN 0
+               WHEN (? - usage_window_start) >= ? THEN 0
+               ELSE 2 END,
+          usage_window_requests DESC,  -- Use the most used account in active window
+          request_count ASC,
+          last_used ASC NULLS FIRST
+      `)
+      accounts = stmt.all(now, FIVE_HOURS_MS, now, FIVE_HOURS_MS) as Account[]
+      break
+      
+    case 'dynamic':
+    default:
+      // Dynamic: Token-aware with intelligent handoff
+      stmt = db.prepare(`
+        SELECT * FROM accounts 
+        ORDER BY 
+          -- Phase 1: Start accounts that are ready
+          CASE WHEN usage_window_start IS NULL THEN 0
+               WHEN (? - usage_window_start) >= ? THEN 0
+               ELSE 2 END,
+          -- Phase 2: Prioritize accounts with low quota remaining (need backup)
+          CASE WHEN usage_window_start IS NOT NULL AND estimated_quota_remaining < 0.25 THEN 1
+               ELSE 2 END,
+          -- Phase 3: Load balance based on quota remaining
+          estimated_quota_remaining DESC,
+          usage_window_requests ASC,
+          request_count ASC,
+          last_used ASC NULLS FIRST,
+          RANDOM()
+      `)
+      accounts = stmt.all(now, FIVE_HOURS_MS) as Account[]
+      break
+  }
+  
+  log.info(`🎯 Using ${strategy} strategy with ${accounts.length} accounts`)
   
   // Log algorithm decision making
   if (accounts.length > 0) {
     const selectedAccount = accounts[0]
-    const phase1Ready = !selectedAccount.usage_window_start || (now - selectedAccount.usage_window_start) >= FIVE_HOURS_MS
-    const phase2Near = selectedAccount.usage_window_start && (now - selectedAccount.usage_window_start) >= FOUR_HOURS_MS
+    const windowActive = selectedAccount.usage_window_start && (now - selectedAccount.usage_window_start) < FIVE_HOURS_MS
+    const quotaRemaining = selectedAccount.estimated_quota_remaining || 1.0
     
-    let phase = "Phase 3: Load Balance"
-    if (phase1Ready) phase = "Phase 1: Round Robin (Start Ticker)"
-    else if (phase2Near) phase = "Phase 2: Reset Priority (<1hr remaining)"
+    let reason = ""
+    switch (strategy) {
+      case 'round_robin':
+        reason = windowActive ? "Round Robin - Active Window" : "Round Robin - Start Window"
+        break
+      case 'sequential':
+        reason = windowActive ? "Sequential - Continue Current" : "Sequential - Start Next"
+        break
+      case 'dynamic':
+        if (!windowActive) reason = "Dynamic - Start Window"
+        else if (quotaRemaining < 0.25) reason = "Dynamic - Low Quota (needs backup)"
+        else reason = `Dynamic - Quota ${(quotaRemaining * 100).toFixed(0)}% remaining`
+        break
+    }
     
-    log.info(`🎯 Algorithm selected account ${selectedAccount.name} via ${phase}`)
+    log.info(`🎯 Selected ${selectedAccount.name} via ${strategy}: ${reason}`)
   }
   
   // Additional round-robin logic for equal accounts
@@ -310,6 +427,52 @@ function updateUsageWindow(accountId: string, timestamp: number) {
     const stmt = db.prepare(`UPDATE accounts SET usage_window_requests = usage_window_requests + 1 WHERE id = ?`)
     stmt.run(accountId)
   }
+}
+
+function updateAccountTokenUsage(accountId: string, inputTokens: number, outputTokens: number, modelUsed: string | null) {
+  const now = Date.now()
+  const account = db.prepare(`SELECT usage_window_start, input_tokens_window, output_tokens_window FROM accounts WHERE id = ?`).get(accountId) as any
+  
+  if (!account) return
+  
+  const FIVE_HOURS_MS = 5 * 60 * 60 * 1000
+  
+  // If no usage window started or current window expired, reset token counters
+  if (!account.usage_window_start || (now - account.usage_window_start) >= FIVE_HOURS_MS) {
+    const stmt = db.prepare(`UPDATE accounts SET input_tokens_window = ?, output_tokens_window = ? WHERE id = ?`)
+    stmt.run(inputTokens, outputTokens, accountId)
+  } else {
+    // Add tokens to current window
+    const stmt = db.prepare(`UPDATE accounts SET input_tokens_window = input_tokens_window + ?, output_tokens_window = output_tokens_window + ? WHERE id = ?`)
+    stmt.run(inputTokens, outputTokens, accountId)
+  }
+  
+  // Update quota estimation (placeholder - will enhance with real quotas)
+  updateQuotaEstimation(accountId)
+}
+
+function updateQuotaEstimation(accountId: string) {
+  const account = db.prepare(`SELECT input_tokens_window, output_tokens_window, plan_type FROM accounts WHERE id = ?`).get(accountId) as any
+  
+  if (!account) return
+  
+  // Rough quota estimates (these will need to be refined based on actual limits)
+  const ESTIMATED_QUOTAS = {
+    'console': { input: 200000, output: 100000 }, // Pro plan estimates
+    'max': { input: 500000, output: 250000 }      // Max plan estimates
+  }
+  
+  const quota = ESTIMATED_QUOTAS[account.plan_type as keyof typeof ESTIMATED_QUOTAS] || ESTIMATED_QUOTAS.console
+  
+  const inputUsage = (account.input_tokens_window || 0) / quota.input
+  const outputUsage = (account.output_tokens_window || 0) / quota.output
+  
+  // Use the higher of input/output usage percentages
+  const estimatedUsage = Math.max(inputUsage, outputUsage)
+  const remainingQuota = Math.max(0, 1.0 - estimatedUsage)
+  
+  const stmt = db.prepare(`UPDATE accounts SET estimated_quota_remaining = ? WHERE id = ?`)
+  stmt.run(remainingQuota, accountId)
 }
 
 function getUsageWindowInfo(account: Account) {
@@ -653,6 +816,16 @@ const server = http.createServer(async (req, res) => {
                 <strong>🕐 Auto-Ticker System:</strong> ${AUTO_TICKER_ENABLED ? '✅ Active' : '❌ Disabled'} - 
                 Runs every ${AUTO_TICKER_INTERVAL_MS / 60000} minutes starting at 10 minutes past each hour (10:10, 10:40, 11:10, etc.) and starts windows only when "Ready"
             </div>
+            
+            <div style="margin-bottom: 15px; padding: 10px; background: #fef3c7; border-radius: 6px; border-left: 4px solid #f59e0b;">
+                <strong>⚡ Load Balancing Strategy:</strong>
+                <select id="loadBalanceStrategy" style="margin-left: 10px; padding: 5px 10px; border-radius: 4px; border: 1px solid #d1d5db;">
+                    <option value="round_robin">Round Robin (Start All)</option>
+                    <option value="sequential">Sequential (Zero Gaps)</option>
+                    <option value="dynamic" selected>Dynamic Load-Based (Recommended)</option>
+                </select>
+                <span id="strategyDescription" style="margin-left: 10px; font-style: italic; color: #6b7280;"></span>
+            </div>
             <table id="accountsTable">
                 <thead>
                     <tr>
@@ -705,6 +878,20 @@ const server = http.createServer(async (req, res) => {
             return response.json();
         }
 
+        async function fetchConfig() {
+            const response = await fetch('/api/config');
+            return response.json();
+        }
+
+        async function updateConfig(key, value) {
+            const response = await fetch('/api/config', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ key, value })
+            });
+            return response.json();
+        }
+
         function formatDate(timestamp) {
             return new Date(timestamp).toLocaleString();
         }
@@ -727,6 +914,40 @@ const server = http.createServer(async (req, res) => {
                 return \`\${minutes}m \${seconds}s\`;
             } else {
                 return \`\${seconds}s\`;
+            }
+        }
+
+        function updateStrategyDescription(strategy) {
+            const descriptions = {
+                'round_robin': 'Starts all accounts simultaneously for maximum initial capacity',
+                'sequential': 'Uses one account until exhausted, then switches - zero service gaps',
+                'dynamic': 'Intelligently predicts quota usage and starts accounts proactively'
+            };
+            
+            document.getElementById('strategyDescription').textContent = descriptions[strategy] || '';
+        }
+
+        async function handleStrategyChange(event) {
+            const newStrategy = event.target.value;
+            
+            try {
+                await updateConfig('load_balance_strategy', newStrategy);
+                updateStrategyDescription(newStrategy);
+                
+                // Show success feedback
+                const desc = document.getElementById('strategyDescription');
+                const originalText = desc.textContent;
+                desc.textContent = '✅ Strategy updated successfully!';
+                desc.style.color = '#10b981';
+                
+                setTimeout(() => {
+                    updateStrategyDescription(newStrategy);
+                    desc.style.color = '#6b7280';
+                }, 2000);
+                
+            } catch (error) {
+                console.error('Failed to update strategy:', error);
+                alert('Failed to update load balancing strategy');
             }
         }
 
@@ -834,8 +1055,30 @@ const server = http.createServer(async (req, res) => {
             updateDashboard();
         }
 
+        // Initialize dashboard
+        async function initializeDashboard() {
+            // Load current strategy from config
+            try {
+                const config = await fetchConfig();
+                const currentStrategy = config.load_balance_strategy || 'dynamic';
+                
+                const strategySelect = document.getElementById('loadBalanceStrategy');
+                strategySelect.value = currentStrategy;
+                updateStrategyDescription(currentStrategy);
+                
+                // Add event listener for strategy changes
+                strategySelect.addEventListener('change', handleStrategyChange);
+                
+            } catch (error) {
+                console.error('Failed to load configuration:', error);
+            }
+            
+            // Load dashboard data
+            updateDashboard();
+        }
+
         // Initial load and auto-refresh every 5 seconds
-        updateDashboard();
+        initializeDashboard();
         setInterval(updateDashboard, 5000);
     </script>
 </body>
@@ -920,6 +1163,45 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(200, { "Content-Type": "application/json" })
     res.end(JSON.stringify(requests))
     return
+  }
+
+  if (pathname === "/api/config") {
+    if (req.method === 'GET') {
+      // Get configuration values
+      const stmt = db.prepare(`SELECT key, value FROM config`)
+      const configRows = stmt.all()
+      
+      const config: Record<string, string> = {}
+      configRows.forEach((row: any) => {
+        config[row.key] = row.value
+      })
+      
+      res.writeHead(200, { "Content-Type": "application/json" })
+      res.end(JSON.stringify(config))
+      return
+      
+    } else if (req.method === 'POST') {
+      // Update configuration value
+      try {
+        const requestBodyStr = requestBody.toString()
+        const { key, value } = JSON.parse(requestBodyStr)
+        
+        const stmt = db.prepare(`INSERT OR REPLACE INTO config (key, value, updated_at) VALUES (?, ?, ?)`)
+        stmt.run(key, value, Date.now())
+        
+        log.info(`Configuration updated: ${key} = ${value}`)
+        
+        res.writeHead(200, { "Content-Type": "application/json" })
+        res.end(JSON.stringify({ success: true, key, value }))
+        return
+        
+      } catch (error) {
+        log.error('Failed to update configuration:', error)
+        res.writeHead(400, { "Content-Type": "application/json" })
+        res.end(JSON.stringify({ error: 'Invalid request body' }))
+        return
+      }
+    }
   }
 
   if (pathname === "/api/algorithm-test") {
@@ -1104,30 +1386,84 @@ const server = http.createServer(async (req, res) => {
           retry: retry > 0 ? retry + 1 : undefined
         })
 
-        // Update usage statistics only after successful request
-        updateAccountUsage(account.id)
-
-        // Save successful request to database
-        const stmt = db.prepare(`
-          INSERT INTO requests (id, timestamp, method, path, account_used, status_code, success, response_time_ms, failover_attempts)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `)
-        stmt.run(requestId, Date.now(), req.method, pathname, account.name, response.status, 1, responseTime, errors.length)
-
-        // Clone response headers
-        const responseHeaders: Record<string, string> = {}
-        response.headers.forEach((value, key) => {
-          responseHeaders[key] = value
-        })
-        responseHeaders["X-Proxy-Account"] = account.name
-        responseHeaders["X-Request-Id"] = requestId
+        // Extract token usage from response
+        let inputTokens: number | null = null
+        let outputTokens: number | null = null
+        let modelUsed: string | null = null
         
-        // Return proxied response
-        res.writeHead(response.status, responseHeaders)
-        if (response.body) {
-          response.body.pipe(res)
-        } else {
-          res.end()
+        try {
+          // Parse request body to get model
+          const requestBodyStr = requestBody.toString()
+          const requestJson = JSON.parse(requestBodyStr)
+          modelUsed = requestJson.model || null
+          
+          // Read response body to extract token usage
+          const responseBodyBuffer = Buffer.from(await response.arrayBuffer())
+          const responseBodyStr = responseBodyBuffer.toString()
+          const responseJson = JSON.parse(responseBodyStr)
+          
+          if (responseJson.usage) {
+            inputTokens = responseJson.usage.input_tokens || null
+            outputTokens = responseJson.usage.output_tokens || null
+            
+            // Update account token tracking
+            if (inputTokens && outputTokens) {
+              updateAccountTokenUsage(account.id, inputTokens, outputTokens, modelUsed)
+            }
+          }
+          
+          // Update usage statistics only after successful request
+          updateAccountUsage(account.id)
+
+          // Save successful request to database with token tracking
+          const stmt = db.prepare(`
+            INSERT INTO requests (id, timestamp, method, path, account_used, status_code, success, response_time_ms, failover_attempts, input_tokens, output_tokens, model_used)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `)
+          stmt.run(requestId, Date.now(), req.method, pathname, account.name, response.status, 1, responseTime, errors.length, inputTokens, outputTokens, modelUsed)
+
+          // Clone response headers
+          const responseHeaders: Record<string, string> = {}
+          response.headers.forEach((value, key) => {
+            responseHeaders[key] = value
+          })
+          responseHeaders["X-Proxy-Account"] = account.name
+          responseHeaders["X-Request-Id"] = requestId
+          
+          // Return proxied response with buffered body
+          res.writeHead(response.status, responseHeaders)
+          res.end(responseBodyBuffer)
+          return
+          
+        } catch (e) {
+          // Token extraction failed, fall back to streaming response
+          log.warn(`Failed to extract tokens for request ${requestId}:`, e)
+          
+          // Update usage statistics without token data
+          updateAccountUsage(account.id)
+
+          // Save successful request to database without token data
+          const stmt = db.prepare(`
+            INSERT INTO requests (id, timestamp, method, path, account_used, status_code, success, response_time_ms, failover_attempts, input_tokens, output_tokens, model_used)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `)
+          stmt.run(requestId, Date.now(), req.method, pathname, account.name, response.status, 1, responseTime, errors.length, null, null, modelUsed)
+
+          // Clone response headers for fallback
+          const responseHeaders: Record<string, string> = {}
+          response.headers.forEach((value, key) => {
+            responseHeaders[key] = value
+          })
+          responseHeaders["X-Proxy-Account"] = account.name
+          responseHeaders["X-Request-Id"] = requestId
+          
+          // Return proxied response via stream (fallback)
+          res.writeHead(response.status, responseHeaders)
+          if (response.body) {
+            response.body.pipe(res)
+          } else {
+            res.end()
+          }
         }
         return
       } catch (error) {
@@ -1156,10 +1492,21 @@ const server = http.createServer(async (req, res) => {
   
   // Save failed request to database
   const stmt = db.prepare(`
-    INSERT INTO requests (id, timestamp, method, path, account_used, status_code, success, error_message, response_time_ms, failover_attempts)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO requests (id, timestamp, method, path, account_used, status_code, success, error_message, response_time_ms, failover_attempts, input_tokens, output_tokens, model_used)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `)
-  stmt.run(requestId, Date.now(), req.method, pathname, null, 503, 0, JSON.stringify(errors), responseTime, errors.length)
+  
+  // Try to extract model from request body for failed requests
+  let modelUsed: string | null = null
+  try {
+    const requestBodyStr = requestBody.toString()
+    const requestJson = JSON.parse(requestBodyStr)
+    modelUsed = requestJson.model || null
+  } catch (e) {
+    // Ignore parsing errors for failed requests
+  }
+  
+  stmt.run(requestId, Date.now(), req.method, pathname, null, 503, 0, JSON.stringify(errors), responseTime, errors.length, null, null, modelUsed)
   
   const response = JSON.stringify({ 
     error: "All accounts failed to proxy request",
