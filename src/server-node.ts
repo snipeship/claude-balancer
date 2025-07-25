@@ -52,6 +52,16 @@ try {
 } catch (e) {
   // Column already exists
 }
+try {
+  db.exec(`ALTER TABLE accounts ADD COLUMN usage_window_start INTEGER DEFAULT NULL`)
+} catch (e) {
+  // Column already exists
+}
+try {
+  db.exec(`ALTER TABLE accounts ADD COLUMN usage_window_requests INTEGER DEFAULT 0`)
+} catch (e) {
+  // Column already exists
+}
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS requests (
@@ -71,6 +81,11 @@ db.exec(`
 // Create index for faster queries
 db.exec(`CREATE INDEX IF NOT EXISTS idx_requests_timestamp ON requests(timestamp DESC)`)
 
+// Auto-ticker configuration  
+const AUTO_TICKER_ENABLED = true // Re-enabled with enhanced token management
+const AUTO_TICKER_INTERVAL_MS = 10 * 60 * 1000 // Check every 10 minutes
+const TICKER_MESSAGE = "." // Simple period to start window
+
 interface Account {
   id: string
   name: string
@@ -82,6 +97,8 @@ interface Account {
   request_count: number
   plan_type: 'console' | 'max'
   supported_models: string
+  usage_window_start: number | null
+  usage_window_requests: number
 }
 
 // Model configuration
@@ -142,7 +159,14 @@ function getCompatibleAccounts(accounts: Account[], model: string | null): Accou
 }
 
 async function refreshAccessToken(account: Account): Promise<string> {
-  const response = await fetch("https://console.anthropic.com/v1/oauth/token", {
+  log.info(`🔄 Refreshing OAuth token for account ${account.name}`)
+  
+  // Use the correct OAuth endpoint based on plan type
+  const oauthEndpoint = account.plan_type === 'max' 
+    ? "https://claude.ai/v1/oauth/token"  // Max plan endpoint
+    : "https://console.anthropic.com/v1/oauth/token"  // Console plan endpoint
+  
+  const response = await fetch(oauthEndpoint, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -155,6 +179,8 @@ async function refreshAccessToken(account: Account): Promise<string> {
   })
 
   if (!response.ok) {
+    const errorText = await response.text()
+    log.error(`❌ Failed to refresh token for account ${account.name}: ${response.status} - ${errorText}`)
     throw new Error(`Failed to refresh token for account ${account.name}: ${response.statusText}`)
   }
 
@@ -166,12 +192,13 @@ async function refreshAccessToken(account: Account): Promise<string> {
   const stmt = db.prepare(`UPDATE accounts SET access_token = ?, expires_at = ? WHERE id = ?`)
   stmt.run(newAccessToken, expiresAt, account.id)
 
+  log.info(`✅ Token refreshed successfully for account ${account.name}`)
   return newAccessToken
 }
 
-async function getValidAccessToken(account: Account): Promise<string> {
-  // Check if access token exists and is still valid
-  if (account.access_token && account.expires_at && account.expires_at > Date.now()) {
+async function getValidAccessToken(account: Account, forceRefresh: boolean = false): Promise<string> {
+  // Force refresh if requested or check if access token exists and is still valid
+  if (!forceRefresh && account.access_token && account.expires_at && account.expires_at > Date.now()) {
     return account.access_token
   }
 
@@ -179,20 +206,219 @@ async function getValidAccessToken(account: Account): Promise<string> {
   return await refreshAccessToken(account)
 }
 
+async function getValidAccessTokenWithRetry(account: Account): Promise<string> {
+  try {
+    return await getValidAccessToken(account)
+  } catch (error) {
+    log.warn(`🔄 Initial token refresh failed for ${account.name}, trying once more`)
+    // Wait a moment and try once more
+    await new Promise(resolve => setTimeout(resolve, 2000))
+    return await getValidAccessToken(account, true)
+  }
+}
+
 function getAvailableAccounts(): Account[] {
-  // Get all accounts ordered by least requests, prioritizing those not used recently
+  // Hybrid algorithm: Ticker Starter + Reset Prioritizer + Load Balancer
   const stmt = db.prepare(`
     SELECT * FROM accounts 
-    ORDER BY request_count ASC, last_used ASC NULLS FIRST
+    ORDER BY 
+      -- Phase 1: Round Robin - Start all tickers (highest priority)
+      CASE WHEN usage_window_start IS NULL THEN 0
+           WHEN (? - usage_window_start) >= ? THEN 0  -- Expired windows ready to restart
+           ELSE 2 END,
+      -- Phase 2: Reset Prioritizer - Use accounts closest to reset (1 hour remaining)
+      CASE WHEN usage_window_start IS NOT NULL AND (? - usage_window_start) >= ? THEN 1
+           ELSE 2 END,
+      -- Phase 3: Load Balance - Even distribution within active windows
+      usage_window_requests ASC,
+      request_count ASC,
+      last_used ASC NULLS FIRST,
+      -- Phase 4: Random tiebreaker for truly equal accounts
+      RANDOM()
   `)
-  const accounts = stmt.all() as Account[]
+  const FIVE_HOURS_MS = 5 * 60 * 60 * 1000
+  const FOUR_HOURS_MS = 4 * 60 * 60 * 1000  // Prioritize accounts with <1 hour remaining
+  const now = Date.now()
+  const accounts = stmt.all(now, FIVE_HOURS_MS, now, FOUR_HOURS_MS) as Account[]
+  
+  // Additional round-robin logic for equal accounts
+  if (accounts.length >= 2) {
+    const topAccounts = accounts.filter(acc => 
+      acc.usage_window_requests === accounts[0].usage_window_requests &&
+      acc.request_count === accounts[0].request_count
+    )
+    
+    if (topAccounts.length > 1) {
+      // Find least recently used among equal accounts
+      topAccounts.sort((a, b) => (a.last_used || 0) - (b.last_used || 0))
+      return [topAccounts[0], ...accounts.filter(acc => !topAccounts.includes(acc))]
+    }
+  }
+  
   return accounts || []
 }
 
 function updateAccountUsage(accountId: string) {
+  const now = Date.now()
   const stmt = db.prepare(`UPDATE accounts SET last_used = ?, request_count = request_count + 1 WHERE id = ?`)
-  stmt.run(Date.now(), accountId)
+  stmt.run(now, accountId)
+  
+  // Update usage window tracking
+  updateUsageWindow(accountId, now)
 }
+
+function updateUsageWindow(accountId: string, timestamp: number) {
+  const account = db.prepare(`SELECT usage_window_start, usage_window_requests FROM accounts WHERE id = ?`).get(accountId) as any
+  
+  if (!account) return
+  
+  const FIVE_HOURS_MS = 5 * 60 * 60 * 1000 // 5 hours in milliseconds
+  
+  // If no usage window started or current window expired, start new window
+  if (!account.usage_window_start || (timestamp - account.usage_window_start) >= FIVE_HOURS_MS) {
+    const stmt = db.prepare(`UPDATE accounts SET usage_window_start = ?, usage_window_requests = 1 WHERE id = ?`)
+    stmt.run(timestamp, accountId)
+  } else {
+    // Increment requests in current window
+    const stmt = db.prepare(`UPDATE accounts SET usage_window_requests = usage_window_requests + 1 WHERE id = ?`)
+    stmt.run(accountId)
+  }
+}
+
+function getUsageWindowInfo(account: Account) {
+  if (!account.usage_window_start) {
+    return {
+      windowActive: false,
+      windowStarted: null,
+      windowEnds: null,
+      requestsInWindow: 0,
+      timeUntilReset: null
+    }
+  }
+  
+  const FIVE_HOURS_MS = 5 * 60 * 60 * 1000
+  const now = Date.now()
+  const windowEnd = account.usage_window_start + FIVE_HOURS_MS
+  const isActive = now < windowEnd
+  
+  return {
+    windowActive: isActive,
+    windowStarted: new Date(account.usage_window_start).toISOString(),
+    windowEnds: new Date(windowEnd).toISOString(),
+    requestsInWindow: account.usage_window_requests,
+    timeUntilReset: isActive ? windowEnd - now : 0
+  }
+}
+
+// Auto-ticker system to keep windows active
+async function sendTickerRequest(account: Account): Promise<boolean> {
+  try {
+    log.info(`🕐 Auto-ticker: Starting window for account ${account.name}`)
+    
+    const accessToken = await getValidAccessTokenWithRetry(account)
+    const tickerBody = JSON.stringify({
+      model: "claude-3-5-haiku-20241022",
+      max_tokens: 5,
+      messages: [{ role: "user", content: TICKER_MESSAGE }]
+    })
+    
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+        "anthropic-version": "2023-06-01",
+        "user-agent": "claude-load-balancer-ticker/1.0.0",
+      },
+      body: tickerBody
+    })
+    
+    if (response.ok) {
+      updateAccountUsage(account.id)
+      log.info(`✅ Auto-ticker: Window started for account ${account.name}`)
+      return true
+    } else {
+      const errorText = await response.text()
+      log.warn(`❌ Auto-ticker failed for account ${account.name}: ${response.status} - ${errorText}`)
+      
+      // If it's a 401/403, the token might have scope issues
+      if (response.status === 401 || response.status === 403) {
+        log.warn(`🔒 Account ${account.name} has OAuth token issues - may need re-authorization`)
+      }
+      return false
+    }
+  } catch (error) {
+    log.error(`Auto-ticker error for account ${account.name}:`, error)
+    return false
+  }
+}
+
+async function checkAndStartWindows() {
+  if (!AUTO_TICKER_ENABLED) return
+  
+  const stmt = db.prepare(`
+    SELECT * FROM accounts 
+    WHERE usage_window_start IS NULL 
+       OR (? - usage_window_start) >= ?
+  `)
+  const FIVE_HOURS_MS = 5 * 60 * 60 * 1000
+  const accountsNeedingTicker = stmt.all(Date.now(), FIVE_HOURS_MS) as Account[]
+  
+  if (accountsNeedingTicker.length > 0) {
+    log.info(`🕐 Auto-ticker: Found ${accountsNeedingTicker.length} "Ready" accounts (never started or expired windows)`)
+    
+    for (const account of accountsNeedingTicker) {
+      const windowInfo = getUsageWindowInfo(account)
+      log.info(`🕐 Auto-ticker: Account ${account.name} is ${!windowInfo.windowActive ? 'Ready' : 'Active'} - ${windowInfo.windowActive ? 'Skipping' : 'Starting window'}`)
+      
+      if (!windowInfo.windowActive) {
+        await sendTickerRequest(account)
+        // Small delay between requests to avoid rate limiting
+        await new Promise(resolve => setTimeout(resolve, 1000))
+      }
+    }
+  } else {
+    log.info(`🕐 Auto-ticker: All accounts have active windows - no ticker needed`)
+  }
+}
+
+// Proactive token refresh system
+async function refreshExpiringTokens() {
+  const stmt = db.prepare(`
+    SELECT * FROM accounts 
+    WHERE expires_at IS NOT NULL 
+      AND expires_at < ? 
+      AND expires_at > 0
+  `)
+  const THIRTY_MINUTES_MS = 30 * 60 * 1000
+  const expiringAccounts = stmt.all(Date.now() + THIRTY_MINUTES_MS) as Account[]
+  
+  if (expiringAccounts.length > 0) {
+    log.info(`🔄 Found ${expiringAccounts.length} accounts with tokens expiring soon`)
+    
+    for (const account of expiringAccounts) {
+      try {
+        await getValidAccessToken(account, true) // Force refresh
+        log.info(`✅ Proactively refreshed token for account ${account.name}`)
+      } catch (error) {
+        log.error(`❌ Failed to proactively refresh token for account ${account.name}:`, error)
+      }
+      // Small delay between refreshes
+      await new Promise(resolve => setTimeout(resolve, 1000))
+    }
+  }
+}
+
+// Start the auto-ticker system
+if (AUTO_TICKER_ENABLED) {
+  setInterval(checkAndStartWindows, AUTO_TICKER_INTERVAL_MS)
+  // Run once on startup after a short delay
+  setTimeout(checkAndStartWindows, 30000) // 30 seconds after startup
+}
+
+// Start proactive token refresh system (runs every 15 minutes)
+setInterval(refreshExpiringTokens, 15 * 60 * 1000)
+setTimeout(refreshExpiringTokens, 60000) // Run after 1 minute on startup
 
 // Helper function to read request body
 function getRequestBody(req: http.IncomingMessage): Promise<Buffer> {
@@ -317,6 +543,15 @@ const server = http.createServer(async (req, res) => {
         .refresh-btn:hover {
             background: #2563eb;
         }
+        .window-active {
+            color: #10b981;
+        }
+        .window-expired {
+            color: #f59e0b;
+        }
+        .window-ready {
+            color: #6b7280;
+        }
     </style>
 </head>
 <body>
@@ -343,13 +578,18 @@ const server = http.createServer(async (req, res) => {
         </div>
 
         <div class="accounts-section">
-            <h2>Accounts</h2>
+            <h2>Accounts & Usage Windows</h2>
+            <div style="margin-bottom: 15px; padding: 10px; background: #f0f9ff; border-radius: 6px; border-left: 4px solid #3b82f6;">
+                <strong>🕐 Auto-Ticker System:</strong> ${AUTO_TICKER_ENABLED ? '✅ Active' : '❌ Disabled'} - 
+                Checks every ${AUTO_TICKER_INTERVAL_MS / 60000} minutes and starts windows only when "Ready"
+            </div>
             <table id="accountsTable">
                 <thead>
                     <tr>
                         <th>Name</th>
                         <th>Requests</th>
-                        <th>Last Used</th>
+                        <th>Usage Window</th>
+                        <th>Next Reset</th>
                         <th>Token Status</th>
                     </tr>
                 </thead>
@@ -404,6 +644,22 @@ const server = http.createServer(async (req, res) => {
             return (ms / 1000).toFixed(2) + 's';
         }
 
+        function formatTimeUntilReset(ms) {
+            if (!ms || ms <= 0) return 'Ready';
+            
+            const hours = Math.floor(ms / (1000 * 60 * 60));
+            const minutes = Math.floor((ms % (1000 * 60 * 60)) / (1000 * 60));
+            const seconds = Math.floor((ms % (1000 * 60)) / 1000);
+            
+            if (hours > 0) {
+                return \`\${hours}h \${minutes}m\`;
+            } else if (minutes > 0) {
+                return \`\${minutes}m \${seconds}s\`;
+            } else {
+                return \`\${seconds}s\`;
+            }
+        }
+
         async function updateDashboard() {
             try {
                 // Update stats
@@ -418,9 +674,13 @@ const server = http.createServer(async (req, res) => {
                 const accountsTableBody = document.querySelector('#accountsTable tbody');
                 accountsTableBody.innerHTML = accounts.map(account => \`
                     <tr>
-                        <td>\${account.name}</td>
+                        <td>\${account.name} \${account.plan_type === 'max' ? '🎯' : ''}</td>
                         <td>\${account.request_count}</td>
-                        <td>\${account.last_used ? formatDate(account.last_used) : 'Never'}</td>
+                        <td>\${account.windowActive ? 
+                            \`🟢 Active (\${account.requestsInWindow} reqs)\` : 
+                            (account.windowStarted ? '⭕ Expired' : '⚪ Not Started')
+                        }</td>
+                        <td>\${formatTimeUntilReset(account.timeUntilReset)}</td>
                         <td>\${account.token_valid ? '✅ Valid' : '❌ Expired'}</td>
                     </tr>
                 \`).join('');
@@ -497,6 +757,9 @@ const server = http.createServer(async (req, res) => {
         name, 
         request_count, 
         last_used,
+        usage_window_start,
+        usage_window_requests,
+        plan_type,
         CASE 
           WHEN expires_at > ? THEN 1 
           ELSE 0 
@@ -504,10 +767,19 @@ const server = http.createServer(async (req, res) => {
       FROM accounts
       ORDER BY request_count DESC
     `)
-    const accounts = stmt.all(Date.now())
+    const accountsData = stmt.all(Date.now()) as any[]
+    
+    // Add usage window information to each account
+    const accountsWithWindows = accountsData.map(account => {
+      const windowInfo = getUsageWindowInfo(account as Account)
+      return {
+        ...account,
+        ...windowInfo
+      }
+    })
     
     res.writeHead(200, { "Content-Type": "application/json" })
-    res.end(JSON.stringify(accounts))
+    res.end(JSON.stringify(accountsWithWindows))
     return
   }
 
@@ -595,13 +867,21 @@ const server = http.createServer(async (req, res) => {
           log.info(`Attempting request with account: ${account.name}`)
         }
         
-        // Get valid access token
-        const accessToken = await getValidAccessToken(account)
+        // Get valid access token with automatic retry
+        const accessToken = await getValidAccessTokenWithRetry(account)
 
-        // Prepare headers for Anthropic API
-        const headers: Record<string, string> = { ...req.headers as any }
-        headers["Authorization"] = `Bearer ${accessToken}`
-        delete headers["host"] // Remove host header to avoid conflicts
+        // Prepare headers for Anthropic API - only keep essential headers
+        const headers: Record<string, string> = {
+          "Authorization": `Bearer ${accessToken}`,
+          "Content-Type": req.headers["content-type"] || "application/json",
+          "anthropic-version": req.headers["anthropic-version"] || "2023-06-01",
+          "user-agent": "claude-load-balancer/1.0.0",
+        }
+        
+        // Preserve specific Anthropic headers if present
+        if (req.headers["anthropic-beta"]) {
+          headers["anthropic-beta"] = req.headers["anthropic-beta"] as string
+        }
         
         // Forward request to Anthropic API
         const anthropicUrl = `https://api.anthropic.com${pathname}${parsedUrl.search || ''}`
@@ -623,8 +903,26 @@ const server = http.createServer(async (req, res) => {
             retry: retry + 1
           })
           
-          // If it's a 4xx error (except 429), don't retry or try other accounts
-          if (response.status >= 400 && response.status < 500 && response.status !== 429) {
+          // Handle OAuth token refresh for 401/403 errors on first retry
+          if ((response.status === 401 || response.status === 403) && retry === 0) {
+            try {
+              log.info(`🔄 Attempting automatic token refresh for account ${account.name}`)
+              await getValidAccessToken(account, true) // Force refresh
+              log.info(`✅ Token refreshed, retrying request for account ${account.name}`)
+              continue // Retry with new token
+            } catch (refreshError) {
+              log.error(`❌ Token refresh failed for account ${account.name}:`, refreshError)
+              // Continue with normal retry logic
+            }
+          }
+          
+          // Allow failover for authentication-related errors that might be account-specific
+          // 400 from Cloudflare, 401 Unauthorized, 403 Forbidden could be token issues
+          const allowFailover = response.status === 400 || response.status === 401 || 
+                               response.status === 403 || response.status === 429 || response.status >= 500
+          
+          if (!allowFailover) {
+            // For other 4xx errors, don't retry or try other accounts
             res.writeHead(response.status, { "Content-Type": "application/json" })
             res.end(errorText)
             return
@@ -651,7 +949,7 @@ const server = http.createServer(async (req, res) => {
           INSERT INTO requests (id, timestamp, method, path, account_used, status_code, success, response_time_ms, failover_attempts)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         `)
-        stmt.run(requestId, Date.now(), req.method, pathname, account.name, response.status, true, responseTime, errors.length)
+        stmt.run(requestId, Date.now(), req.method, pathname, account.name, response.status, 1, responseTime, errors.length)
 
         // Clone response headers
         const responseHeaders: Record<string, string> = {}
@@ -698,7 +996,7 @@ const server = http.createServer(async (req, res) => {
     INSERT INTO requests (id, timestamp, method, path, account_used, status_code, success, error_message, response_time_ms, failover_attempts)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `)
-  stmt.run(requestId, Date.now(), req.method, pathname, null, 503, false, JSON.stringify(errors), responseTime, errors.length)
+  stmt.run(requestId, Date.now(), req.method, pathname, null, 503, 0, JSON.stringify(errors), responseTime, errors.length)
   
   const response = JSON.stringify({ 
     error: "All accounts failed to proxy request",
