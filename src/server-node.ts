@@ -800,8 +800,27 @@ const server = http.createServer(async (req, res) => {
         </div>
 
         <div class="model-availability-section">
-            <h2>Model Availability Matrix</h2>
-            <div id="modelMatrix" style="margin-bottom: 20px; padding: 15px; background: #f8fafc; border-radius: 8px; border: 1px solid #e2e8f0;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                <h2 style="margin: 0;">Model Support</h2>
+                <button id="toggleModelMatrix" style="padding: 6px 12px; border: 1px solid #d1d5db; border-radius: 6px; background: white; cursor: pointer; font-size: 12px;">
+                    Show Details
+                </button>
+            </div>
+            <div id="modelSummary" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 15px;">
+                <div style="padding: 12px; background: #f0f9ff; border-radius: 6px; border-left: 4px solid #3b82f6;">
+                    <div style="font-weight: 600; color: #1e40af;">Opus Available</div>
+                    <div id="opusCount" style="font-size: 24px; font-weight: bold; color: #3b82f6;">-</div>
+                </div>
+                <div style="padding: 12px; background: #f0fdf4; border-radius: 6px; border-left: 4px solid #10b981;">
+                    <div style="font-weight: 600; color: #065f46;">Sonnet Available</div>
+                    <div id="sonnetCount" style="font-size: 24px; font-weight: bold; color: #10b981;">-</div>
+                </div>
+                <div style="padding: 12px; background: #fefce8; border-radius: 6px; border-left: 4px solid #eab308;">
+                    <div style="font-weight: 600; color: #92400e;">Haiku Available</div>
+                    <div id="haikuCount" style="font-size: 24px; font-weight: bold; color: #eab308;">-</div>
+                </div>
+            </div>
+            <div id="modelMatrix" style="display: none; margin-bottom: 20px; padding: 15px; background: #f8fafc; border-radius: 8px; border: 1px solid #e2e8f0;">
                 <div style="display: grid; grid-template-columns: 200px repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; align-items: center;">
                     <div style="font-weight: bold;">Model</div>
                     <div id="modelHeaders" style="display: contents;"></div>
@@ -812,19 +831,27 @@ const server = http.createServer(async (req, res) => {
 
         <div class="accounts-section">
             <h2>Accounts & Usage Windows</h2>
-            <div style="margin-bottom: 15px; padding: 10px; background: #f0f9ff; border-radius: 6px; border-left: 4px solid #3b82f6;">
-                <strong>🕐 Auto-Ticker System:</strong> ${AUTO_TICKER_ENABLED ? '✅ Active' : '❌ Disabled'} - 
-                Runs every ${AUTO_TICKER_INTERVAL_MS / 60000} minutes starting at 10 minutes past each hour (10:10, 10:40, 11:10, etc.) and starts windows only when "Ready"
-            </div>
-            
-            <div style="margin-bottom: 15px; padding: 10px; background: #fef3c7; border-radius: 6px; border-left: 4px solid #f59e0b;">
-                <strong>⚡ Load Balancing Strategy:</strong>
-                <select id="loadBalanceStrategy" style="margin-left: 10px; padding: 5px 10px; border-radius: 4px; border: 1px solid #d1d5db;">
-                    <option value="round_robin">Round Robin (Start All)</option>
-                    <option value="sequential">Sequential (Zero Gaps)</option>
-                    <option value="dynamic" selected>Dynamic Load-Based (Recommended)</option>
-                </select>
-                <span id="strategyDescription" style="margin-left: 10px; font-style: italic; color: #6b7280;"></span>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding: 15px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 8px; color: white;">
+                <div style="display: flex; align-items: center; gap: 15px;">
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <span style="font-size: 18px;">🕐</span>
+                        <span style="font-weight: 600;">Auto-Ticker:</span>
+                        <span title="Runs every ${AUTO_TICKER_INTERVAL_MS / 60000} minutes starting at 10 minutes past each hour (10:10, 10:40, 11:10, etc.) and starts windows only when Ready" style="cursor: help;">
+                            ${AUTO_TICKER_ENABLED ? '✅ Active' : '❌ Disabled'}
+                        </span>
+                    </div>
+                    <div style="height: 20px; width: 1px; background: rgba(255,255,255,0.3);"></div>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <span style="font-size: 18px;">⚡</span>
+                        <span style="font-weight: 600;">Strategy:</span>
+                        <select id="loadBalanceStrategy" style="padding: 6px 12px; border-radius: 6px; border: none; background: rgba(255,255,255,0.9); color: #333; font-weight: 500;">
+                            <option value="round_robin">Round Robin</option>
+                            <option value="sequential">Sequential</option>
+                            <option value="dynamic" selected>Dynamic</option>
+                        </select>
+                    </div>
+                </div>
+                <div id="strategyDescription" style="font-style: italic; opacity: 0.9; max-width: 300px; text-align: right; font-size: 14px;"></div>
             </div>
             <table id="accountsTable">
                 <thead>
@@ -984,6 +1011,27 @@ const server = http.createServer(async (req, res) => {
             }
         }
 
+        function updateModelSummary(accounts) {
+            // Count available accounts for each model type
+            let opusCount = 0;
+            let sonnetCount = 0; 
+            let haikuCount = 0;
+            
+            accounts.forEach(account => {
+                if (!account.token_valid) return;
+                
+                const supportedModels = account.supported_models ? account.supported_models.split(',') : [];
+                
+                if (supportedModels.includes('claude-3-opus-20240229')) opusCount++;
+                if (supportedModels.some(m => m.includes('sonnet'))) sonnetCount++;
+                if (supportedModels.some(m => m.includes('haiku'))) haikuCount++;
+            });
+            
+            document.getElementById('opusCount').textContent = opusCount + ' accounts';
+            document.getElementById('sonnetCount').textContent = sonnetCount + ' accounts';
+            document.getElementById('haikuCount').textContent = haikuCount + ' accounts';
+        }
+
         function updateModelMatrix(accounts) {
             const allModels = [
                 'claude-3-5-sonnet-20241022',
@@ -1013,18 +1061,15 @@ const server = http.createServer(async (req, res) => {
                 accounts.forEach(account => {
                     const supportedModels = account.supported_models ? account.supported_models.split(',') : [];
                     const isSupported = supportedModels.includes(model);
-                    const availableAccounts = accounts.filter(acc => 
-                        acc.supported_models && acc.supported_models.split(',').includes(model) && acc.token_valid
-                    ).length;
                     
                     modelRow.push(\`
                         <div style="text-align: center; padding: 5px;">
                             \${isSupported ? 
                                 (account.token_valid ? 
-                                    \`<span style="color: #10b981;">✅ Available</span>\` : 
-                                    \`<span style="color: #f59e0b;">⚠️ Token Issue</span>\`
+                                    \`<span style="color: #10b981;">✅</span>\` : 
+                                    \`<span style="color: #f59e0b;">⚠️</span>\`
                                 ) : 
-                                \`<span style="color: #ef4444;">❌ Not Supported</span>\`
+                                \`<span style="color: #ef4444;">❌</span>\`
                             }
                         </div>
                     \`);
@@ -1046,7 +1091,8 @@ const server = http.createServer(async (req, res) => {
                 // Update accounts table
                 const accounts = await fetchAccounts();
                 
-                // Update model availability matrix
+                // Update model summary and matrix
+                updateModelSummary(accounts);
                 updateModelMatrix(accounts);
                 
                 const accountsTableBody = document.querySelector('#accountsTable tbody');
@@ -1103,6 +1149,20 @@ const server = http.createServer(async (req, res) => {
                 
                 // Add event listener for strategy changes
                 strategySelect.addEventListener('change', handleStrategyChange);
+                
+                // Add toggle for model matrix
+                const toggleButton = document.getElementById('toggleModelMatrix');
+                const modelMatrix = document.getElementById('modelMatrix');
+                
+                toggleButton.addEventListener('click', () => {
+                    if (modelMatrix.style.display === 'none') {
+                        modelMatrix.style.display = 'block';
+                        toggleButton.textContent = 'Hide Details';
+                    } else {
+                        modelMatrix.style.display = 'none';
+                        toggleButton.textContent = 'Show Details';
+                    }
+                });
                 
             } catch (error) {
                 console.error('Failed to load configuration:', error);
