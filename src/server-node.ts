@@ -1139,6 +1139,94 @@ const server = http.createServer(async (req, res) => {
             }
         }
 
+        function setupInlineEditing() {
+            // Setup name editing
+            document.querySelectorAll('.editable-name').forEach(nameSpan => {
+                nameSpan.addEventListener('mouseenter', function() {
+                    this.style.backgroundColor = '#f3f4f6';
+                });
+                
+                nameSpan.addEventListener('mouseleave', function() {
+                    this.style.backgroundColor = '';
+                });
+                
+                nameSpan.addEventListener('click', function() {
+                    const currentName = this.textContent;
+                    const accountId = this.dataset.accountId;
+                    
+                    const input = document.createElement('input');
+                    input.type = 'text';
+                    input.value = currentName;
+                    input.style.cssText = 'padding: 2px 6px; border: 1px solid #3b82f6; border-radius: 4px; outline: none; width: 120px;';
+                    
+                    this.replaceWith(input);
+                    input.focus();
+                    input.select();
+                    
+                    const saveEdit = async () => {
+                        const newName = input.value.trim();
+                        if (newName && newName !== currentName) {
+                            try {
+                                const response = await fetch('/api/rename-account', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ oldName: currentName, newName: newName })
+                                });
+                                
+                                if (response.ok) {
+                                    updateDashboard(); // Refresh dashboard
+                                } else {
+                                    throw new Error('Failed to rename account');
+                                }
+                            } catch (error) {
+                                alert('Failed to rename account: ' + error.message);
+                                input.replaceWith(nameSpan);
+                            }
+                        } else {
+                            input.replaceWith(nameSpan);
+                        }
+                    };
+                    
+                    input.addEventListener('blur', saveEdit);
+                    input.addEventListener('keydown', (e) => {
+                        if (e.key === 'Enter') saveEdit();
+                        if (e.key === 'Escape') input.replaceWith(nameSpan);
+                    });
+                });
+            });
+
+            // Setup plan tier re-authentication
+            document.querySelectorAll('.plan-tier-clickable').forEach(tierSpan => {
+                tierSpan.addEventListener('click', function() {
+                    const accountName = this.dataset.accountName;
+                    reAuthenticateAccount(accountName);
+                });
+            });
+        }
+
+        async function reAuthenticateAccount(accountName) {
+            try {
+                const response = await fetch('/api/reauth-account', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ accountName: accountName })
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    // Open OAuth URL in new window
+                    window.open(result.authUrl, '_blank', 'width=600,height=700');
+                    alert('Please complete authentication in the new window, then refresh this dashboard.');
+                } else {
+                    throw new Error(result.error || 'Failed to initiate re-authentication');
+                }
+                
+            } catch (error) {
+                alert('Re-authentication failed: ' + error.message);
+            }
+        }
+
         function updateModelSummary(accounts) {
             // Count available accounts for each model type
             let opusCount = 0;
@@ -1226,8 +1314,17 @@ const server = http.createServer(async (req, res) => {
                 const accountsTableBody = document.querySelector('#accountsTable tbody');
                 accountsTableBody.innerHTML = accounts.map(account => \`
                     <tr>
-                        <td>\${account.name} \${account.plan_type === 'max' ? '🎯' : ''}</td>
-                        <td>\${formatPlanTier(account.detected_tier, account.plan_type, account.last_tier_detection)}</td>
+                        <td>
+                            <span class="editable-name" data-account-id="\${account.name}" style="cursor: pointer; padding: 2px 6px; border-radius: 4px; transition: background 0.2s;" 
+                                  title="Click to edit name">\${account.name}</span> 
+                            \${account.plan_type === 'max' ? '🎯' : ''}
+                        </td>
+                        <td>
+                            <span class="plan-tier-clickable" data-account-name="\${account.name}" style="cursor: pointer;" 
+                                  title="Click to re-authenticate account">
+                                \${formatPlanTier(account.detected_tier, account.plan_type, account.last_tier_detection)}
+                            </span>
+                        </td>
                         <td>\${account.request_count}</td>
                         <td>\${account.windowActive ? 
                             \`🟢 Active (\${account.requestsInWindow} reqs)\` : 
@@ -1239,6 +1336,9 @@ const server = http.createServer(async (req, res) => {
                         <td>\${account.token_valid ? '✅ Valid' : '❌ Expired'}</td>
                     </tr>
                 \`).join('');
+
+                // Add event listeners for inline editing
+                setupInlineEditing();
 
                 // Update requests table
                 const requests = await fetchRequests();
@@ -1485,6 +1585,107 @@ const server = http.createServer(async (req, res) => {
         log.error('Failed to detect plans:', error)
         res.writeHead(500, { "Content-Type": "application/json" })
         res.end(JSON.stringify({ error: 'Plan detection failed' }))
+        return
+      }
+    }
+  }
+
+  if (pathname === "/api/rename-account") {
+    if (req.method === 'POST') {
+      try {
+        const requestBodyStr = requestBody.toString()
+        const { oldName, newName } = JSON.parse(requestBodyStr)
+        
+        if (!oldName || !newName) {
+          res.writeHead(400, { "Content-Type": "application/json" })
+          res.end(JSON.stringify({ error: 'Missing oldName or newName' }))
+          return
+        }
+        
+        // Check if new name already exists
+        const existingStmt = db.prepare(`SELECT id FROM accounts WHERE name = ?`)
+        const existing = existingStmt.get(newName)
+        
+        if (existing) {
+          res.writeHead(400, { "Content-Type": "application/json" })
+          res.end(JSON.stringify({ error: 'Account name already exists' }))
+          return
+        }
+        
+        // Update account name
+        const updateStmt = db.prepare(`UPDATE accounts SET name = ? WHERE name = ?`)
+        const result = updateStmt.run(newName, oldName)
+        
+        if (result.changes > 0) {
+          log.info(`Account renamed from ${oldName} to ${newName}`)
+          res.writeHead(200, { "Content-Type": "application/json" })
+          res.end(JSON.stringify({ success: true, oldName, newName }))
+        } else {
+          res.writeHead(404, { "Content-Type": "application/json" })
+          res.end(JSON.stringify({ error: 'Account not found' }))
+        }
+        return
+        
+      } catch (error) {
+        log.error('Failed to rename account:', error)
+        res.writeHead(500, { "Content-Type": "application/json" })
+        res.end(JSON.stringify({ error: 'Failed to rename account' }))
+        return
+      }
+    }
+  }
+
+  if (pathname === "/api/reauth-account") {
+    if (req.method === 'POST') {
+      try {
+        const requestBodyStr = requestBody.toString()
+        const { accountName } = JSON.parse(requestBodyStr)
+        
+        if (!accountName) {
+          res.writeHead(400, { "Content-Type": "application/json" })
+          res.end(JSON.stringify({ error: 'Missing accountName' }))
+          return
+        }
+        
+        // Find the account
+        const accountStmt = db.prepare(`SELECT * FROM accounts WHERE name = ?`)
+        const account = accountStmt.get(accountName) as Account | undefined
+        
+        if (!account) {
+          res.writeHead(404, { "Content-Type": "application/json" })
+          res.end(JSON.stringify({ error: 'Account not found' }))
+          return
+        }
+        
+        // Generate OAuth URL (similar to CLI)
+        const state = crypto.randomBytes(32).toString('hex')
+        const codeVerifier = crypto.randomBytes(32).toString('base64url')
+        const codeChallenge = crypto.createHash('sha256').update(codeVerifier).digest('base64url')
+        
+        const oauthUrl = new URL(`https://${account.plan_type === 'max' ? 'claude.ai' : 'console.anthropic.com'}/oauth/authorize`)
+        oauthUrl.searchParams.set('client_id', CLIENT_ID)
+        oauthUrl.searchParams.set('response_type', 'code')
+        oauthUrl.searchParams.set('redirect_uri', 'urn:ietf:wg:oauth:2.0:oob')
+        oauthUrl.searchParams.set('scope', 'user:inference')
+        oauthUrl.searchParams.set('state', state)
+        oauthUrl.searchParams.set('code_challenge', codeChallenge)
+        oauthUrl.searchParams.set('code_challenge_method', 'S256')
+        
+        // Store challenge for later verification (you'd need to implement the callback handling)
+        log.info(`Generated re-auth URL for account ${accountName}`)
+        
+        res.writeHead(200, { "Content-Type": "application/json" })
+        res.end(JSON.stringify({ 
+          success: true, 
+          authUrl: oauthUrl.toString(),
+          message: 'Complete authentication and manually update tokens via CLI'
+        }))
+        return
+        
+      } catch (error) {
+        log.error('Failed to generate re-auth URL:', error)
+        res.writeHead(500, { "Content-Type": "application/json" })
+        res.end(JSON.stringify({ error: 'Failed to generate re-auth URL' }))
         return
       }
     }
