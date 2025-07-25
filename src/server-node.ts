@@ -1,6 +1,6 @@
-import http from 'http'
-import url from 'url'
-import crypto from 'crypto'
+import * as http from 'http'
+import * as url from 'url'
+import * as crypto from 'crypto'
 import Database from 'better-sqlite3'
 import fetch from 'node-fetch'
 
@@ -83,7 +83,7 @@ db.exec(`CREATE INDEX IF NOT EXISTS idx_requests_timestamp ON requests(timestamp
 
 // Auto-ticker configuration  
 const AUTO_TICKER_ENABLED = true // Re-enabled with enhanced token management
-const AUTO_TICKER_INTERVAL_MS = 10 * 60 * 1000 // Check every 10 minutes
+const AUTO_TICKER_INTERVAL_MS = 30 * 60 * 1000 // Check every 30 minutes
 const TICKER_MESSAGE = "." // Simple period to start window
 
 interface Account {
@@ -241,6 +241,19 @@ function getAvailableAccounts(): Account[] {
   const now = Date.now()
   const accounts = stmt.all(now, FIVE_HOURS_MS, now, FOUR_HOURS_MS) as Account[]
   
+  // Log algorithm decision making
+  if (accounts.length > 0) {
+    const selectedAccount = accounts[0]
+    const phase1Ready = !selectedAccount.usage_window_start || (now - selectedAccount.usage_window_start) >= FIVE_HOURS_MS
+    const phase2Near = selectedAccount.usage_window_start && (now - selectedAccount.usage_window_start) >= FOUR_HOURS_MS
+    
+    let phase = "Phase 3: Load Balance"
+    if (phase1Ready) phase = "Phase 1: Round Robin (Start Ticker)"
+    else if (phase2Near) phase = "Phase 2: Reset Priority (<1hr remaining)"
+    
+    log.info(`🎯 Algorithm selected account ${selectedAccount.name} via ${phase}`)
+  }
+  
   // Additional round-robin logic for equal accounts
   if (accounts.length >= 2) {
     const topAccounts = accounts.filter(acc => 
@@ -251,11 +264,25 @@ function getAvailableAccounts(): Account[] {
     if (topAccounts.length > 1) {
       // Find least recently used among equal accounts
       topAccounts.sort((a, b) => (a.last_used || 0) - (b.last_used || 0))
+      log.info(`🔄 Round-robin tiebreaker: ${topAccounts.length} equal accounts, chose least recently used: ${topAccounts[0].name}`)
       return [topAccounts[0], ...accounts.filter(acc => !topAccounts.includes(acc))]
     }
   }
   
   return accounts || []
+}
+
+function getAccountPhase(account: Account): string {
+  const now = Date.now()
+  const FIVE_HOURS_MS = 5 * 60 * 60 * 1000
+  const FOUR_HOURS_MS = 4 * 60 * 60 * 1000
+  
+  const phase1Ready = !account.usage_window_start || (now - account.usage_window_start) >= FIVE_HOURS_MS
+  const phase2Near = account.usage_window_start && (now - account.usage_window_start) >= FOUR_HOURS_MS
+  
+  if (phase1Ready) return "Phase 1: Round Robin (Start Ticker)"
+  else if (phase2Near) return "Phase 2: Reset Priority (<1hr remaining)"
+  else return "Phase 3: Load Balance"
 }
 
 function updateAccountUsage(accountId: string) {
@@ -322,7 +349,12 @@ async function sendTickerRequest(account: Account): Promise<boolean> {
       messages: [{ role: "user", content: TICKER_MESSAGE }]
     })
     
-    const response = await fetch("https://api.anthropic.com/v1/messages", {
+    // Use correct API endpoint based on account plan
+    const baseUrl = account.plan_type === 'max' 
+      ? "https://claude.ai"  // Max plan uses claude.ai API
+      : "https://api.anthropic.com"  // Console plan uses api.anthropic.com
+    
+    const response = await fetch(`${baseUrl}/v1/messages`, {
       method: "POST",
       headers: {
         "Authorization": `Bearer ${accessToken}`,
@@ -409,10 +441,37 @@ async function refreshExpiringTokens() {
   }
 }
 
-// Start the auto-ticker system
+// Auto-ticker scheduler function
+function scheduleAutoTicker() {
+    const now = new Date()
+    const currentMinutes = now.getMinutes()
+    const currentSeconds = now.getSeconds()
+    
+    // Calculate time until next 10 minutes past the hour or 40 minutes past the hour
+    let nextTriggerMinutes: number
+    if (currentMinutes < 10) {
+      nextTriggerMinutes = 10 // Next is 10 minutes past this hour
+    } else if (currentMinutes < 40) {
+      nextTriggerMinutes = 40 // Next is 40 minutes past this hour
+    } else {
+      nextTriggerMinutes = 70 // Next is 10 minutes past next hour (60 + 10)
+    }
+    
+    const timeUntilNext = ((nextTriggerMinutes - currentMinutes) * 60 - currentSeconds) * 1000
+    
+    log.info(`🕐 Auto-ticker scheduled: next run in ${Math.round(timeUntilNext / 1000 / 60)} minutes at ${nextTriggerMinutes >= 60 ? `${String(now.getHours() + 1).padStart(2, '0')}:10` : `${String(now.getHours()).padStart(2, '0')}:${String(nextTriggerMinutes).padStart(2, '0')}`}`)
+    
+    setTimeout(() => {
+      checkAndStartWindows()
+      // Schedule regular interval from now on
+      setInterval(checkAndStartWindows, AUTO_TICKER_INTERVAL_MS)
+    }, timeUntilNext)
+}
+
+// Start the auto-ticker system - runs every 30 minutes starting at 10 minutes past each hour
 if (AUTO_TICKER_ENABLED) {
-  setInterval(checkAndStartWindows, AUTO_TICKER_INTERVAL_MS)
-  // Run once on startup after a short delay
+  scheduleAutoTicker()
+  // Also run once on startup after a short delay for immediate availability
   setTimeout(checkAndStartWindows, 30000) // 30 seconds after startup
 }
 
@@ -505,7 +564,7 @@ const server = http.createServer(async (req, res) => {
             font-weight: bold;
             color: #333;
         }
-        .accounts-section, .requests-section {
+        .accounts-section, .requests-section, .model-availability-section {
             background: white;
             padding: 20px;
             border-radius: 8px;
@@ -577,11 +636,22 @@ const server = http.createServer(async (req, res) => {
             </div>
         </div>
 
+        <div class="model-availability-section">
+            <h2>Model Availability Matrix</h2>
+            <div id="modelMatrix" style="margin-bottom: 20px; padding: 15px; background: #f8fafc; border-radius: 8px; border: 1px solid #e2e8f0;">
+                <div style="display: grid; grid-template-columns: 200px repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; align-items: center;">
+                    <div style="font-weight: bold;">Model</div>
+                    <div id="modelHeaders" style="display: contents;"></div>
+                    <div id="modelRows" style="display: contents;"></div>
+                </div>
+            </div>
+        </div>
+
         <div class="accounts-section">
             <h2>Accounts & Usage Windows</h2>
             <div style="margin-bottom: 15px; padding: 10px; background: #f0f9ff; border-radius: 6px; border-left: 4px solid #3b82f6;">
                 <strong>🕐 Auto-Ticker System:</strong> ${AUTO_TICKER_ENABLED ? '✅ Active' : '❌ Disabled'} - 
-                Checks every ${AUTO_TICKER_INTERVAL_MS / 60000} minutes and starts windows only when "Ready"
+                Runs every ${AUTO_TICKER_INTERVAL_MS / 60000} minutes starting at 10 minutes past each hour (10:10, 10:40, 11:10, etc.) and starts windows only when "Ready"
             </div>
             <table id="accountsTable">
                 <thead>
@@ -660,6 +730,56 @@ const server = http.createServer(async (req, res) => {
             }
         }
 
+        function updateModelMatrix(accounts) {
+            const allModels = [
+                'claude-3-5-sonnet-20241022',
+                'claude-3-haiku-20240307', 
+                'claude-3-5-haiku-20241022',
+                'claude-3-opus-20240229'
+            ];
+            
+            const modelNames = {
+                'claude-3-5-sonnet-20241022': 'Sonnet 3.5',
+                'claude-3-haiku-20240307': 'Haiku 3',
+                'claude-3-5-haiku-20241022': 'Haiku 3.5',
+                'claude-3-opus-20240229': 'Opus 3 🎯'
+            };
+            
+            // Update headers
+            const modelHeaders = document.getElementById('modelHeaders');
+            modelHeaders.innerHTML = accounts.map(account => 
+                \`<div style="font-weight: bold; text-align: center;">\${account.name}</div>\`
+            ).join('');
+            
+            // Update rows
+            const modelRows = document.getElementById('modelRows');
+            modelRows.innerHTML = allModels.map(model => {
+                const modelRow = [\`<div style="font-weight: 500;">\${modelNames[model]}</div>\`];
+                
+                accounts.forEach(account => {
+                    const supportedModels = account.supported_models ? account.supported_models.split(',') : [];
+                    const isSupported = supportedModels.includes(model);
+                    const availableAccounts = accounts.filter(acc => 
+                        acc.supported_models && acc.supported_models.split(',').includes(model) && acc.token_valid
+                    ).length;
+                    
+                    modelRow.push(\`
+                        <div style="text-align: center; padding: 5px;">
+                            \${isSupported ? 
+                                (account.token_valid ? 
+                                    \`<span style="color: #10b981;">✅ Available</span>\` : 
+                                    \`<span style="color: #f59e0b;">⚠️ Token Issue</span>\`
+                                ) : 
+                                \`<span style="color: #ef4444;">❌ Not Supported</span>\`
+                            }
+                        </div>
+                    \`);
+                });
+                
+                return modelRow.join('');
+            }).join('');
+        }
+
         async function updateDashboard() {
             try {
                 // Update stats
@@ -671,6 +791,10 @@ const server = http.createServer(async (req, res) => {
 
                 // Update accounts table
                 const accounts = await fetchAccounts();
+                
+                // Update model availability matrix
+                updateModelMatrix(accounts);
+                
                 const accountsTableBody = document.querySelector('#accountsTable tbody');
                 accountsTableBody.innerHTML = accounts.map(account => \`
                     <tr>
@@ -760,6 +884,7 @@ const server = http.createServer(async (req, res) => {
         usage_window_start,
         usage_window_requests,
         plan_type,
+        supported_models,
         CASE 
           WHEN expires_at > ? THEN 1 
           ELSE 0 
@@ -794,6 +919,39 @@ const server = http.createServer(async (req, res) => {
     
     res.writeHead(200, { "Content-Type": "application/json" })
     res.end(JSON.stringify(requests))
+    return
+  }
+
+  if (pathname === "/api/algorithm-test") {
+    // Test endpoint to show algorithm behavior
+    const allAccounts = getAvailableAccounts()
+    const modelRequested = parsedUrl.query.model as string || "claude-3-5-sonnet-20241022"
+    const compatibleAccounts = getCompatibleAccounts(allAccounts, modelRequested)
+    
+    const algorithmInfo = {
+      requestedModel: modelRequested,
+      totalAccounts: allAccounts.length,
+      compatibleAccounts: compatibleAccounts.length,
+      selectedAccount: compatibleAccounts.length > 0 ? compatibleAccounts[0].name : null,
+      accountDetails: allAccounts.map(acc => ({
+        name: acc.name,
+        plan: acc.plan_type,
+        windowActive: !!acc.usage_window_start && (Date.now() - acc.usage_window_start) < (5 * 60 * 60 * 1000),
+        windowRequests: acc.usage_window_requests || 0,
+        totalRequests: acc.request_count,
+        lastUsed: acc.last_used,
+        supportedModels: acc.supported_models?.split(',') || [],
+        phase: getAccountPhase(acc)
+      })),
+      algorithmPhases: {
+        phase1: "Round Robin - Start all tickers (highest priority)",
+        phase2: "Reset Priority - Use accounts closest to reset (<1hr remaining)", 
+        phase3: "Load Balance - Even distribution within active windows"
+      }
+    }
+    
+    res.writeHead(200, { "Content-Type": "application/json" })
+    res.end(JSON.stringify(algorithmInfo, null, 2))
     return
   }
 
@@ -874,7 +1032,9 @@ const server = http.createServer(async (req, res) => {
         const headers: Record<string, string> = {
           "Authorization": `Bearer ${accessToken}`,
           "Content-Type": req.headers["content-type"] || "application/json",
-          "anthropic-version": req.headers["anthropic-version"] || "2023-06-01",
+          "anthropic-version": Array.isArray(req.headers["anthropic-version"]) 
+            ? req.headers["anthropic-version"][0] 
+            : req.headers["anthropic-version"] || "2023-06-01",
           "user-agent": "claude-load-balancer/1.0.0",
         }
         
@@ -883,8 +1043,11 @@ const server = http.createServer(async (req, res) => {
           headers["anthropic-beta"] = req.headers["anthropic-beta"] as string
         }
         
-        // Forward request to Anthropic API
-        const anthropicUrl = `https://api.anthropic.com${pathname}${parsedUrl.search || ''}`
+        // Forward request to correct API endpoint based on account plan
+        const baseUrl = account.plan_type === 'max' 
+          ? "https://claude.ai"  // Max plan uses claude.ai API
+          : "https://api.anthropic.com"  // Console plan uses api.anthropic.com
+        const anthropicUrl = `${baseUrl}${pathname}${parsedUrl.search || ''}`
         const response = await fetch(anthropicUrl, {
           method: req.method,
           headers: headers,
