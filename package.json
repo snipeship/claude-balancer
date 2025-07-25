@@ -4,13 +4,25 @@
   "description": "Load balancer proxy for multiple Claude OAuth accounts",
   "type": "module",
   "scripts": {
-    "start": "bun run src/server.ts",
-    "cli": "bun run src/cli.ts"
+    "start": "tsx src/server-node.ts",
+    "start:8081": "PORT=8081 tsx src/server-node.ts",
+    "start:8082": "PORT=8082 tsx src/server-node.ts",
+    "cli": "tsx src/cli-node.ts",
+    "build": "tsc",
+    "dev": "tsx watch src/server-node.ts",
+    "test": "node test-setup.js",
+    "kill-port": "echo 'Usage: npm run kill-port 8080' && lsof -ti:${PORT:-8080} | xargs kill",
+    "original:start": "tsx src/server.ts",
+    "original:cli": "tsx src/cli.ts"
   },
   "dependencies": {
-    "@types/bun": "latest"
+    "better-sqlite3": "^11.5.0",
+    "@types/better-sqlite3": "^7.6.11",
+    "node-fetch": "^3.3.2",
+    "@types/node": "^20.0.0"
   },
   "devDependencies": {
-    "bun-types": "latest"
+    "tsx": "^4.19.2",
+    "typescript": "^5.3.0"
   }
 }
