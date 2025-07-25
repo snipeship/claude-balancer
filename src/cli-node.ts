@@ -18,9 +18,23 @@ db.exec(`
     expires_at INTEGER,
     created_at INTEGER NOT NULL,
     last_used INTEGER,
-    request_count INTEGER DEFAULT 0
+    request_count INTEGER DEFAULT 0,
+    plan_type TEXT DEFAULT 'console',
+    supported_models TEXT DEFAULT 'claude-3-5-sonnet-20241022,claude-3-haiku-20240307'
   )
 `)
+
+// Add new columns to existing tables if they don't exist
+try {
+  db.exec(`ALTER TABLE accounts ADD COLUMN plan_type TEXT DEFAULT 'console'`)
+} catch (e) {
+  // Column already exists
+}
+try {
+  db.exec(`ALTER TABLE accounts ADD COLUMN supported_models TEXT DEFAULT 'claude-3-5-sonnet-20241022,claude-3-haiku-20240307'`)
+} catch (e) {
+  // Column already exists
+}
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS requests (
@@ -46,7 +60,15 @@ interface Account {
   created_at: number
   last_used: number | null
   request_count: number
+  plan_type: 'console' | 'max'
+  supported_models: string
 }
+
+// Plan-specific model configurations
+const PLAN_MODELS = {
+  console: ['claude-3-5-sonnet-20241022', 'claude-3-haiku-20240307', 'claude-3-5-haiku-20241022'],
+  max: ['claude-3-5-sonnet-20241022', 'claude-3-haiku-20240307', 'claude-3-5-haiku-20241022', 'claude-3-opus-20240229']
+} as const
 
 function prompt(question: string): Promise<string> {
   const rl = readline.createInterface({
@@ -145,14 +167,20 @@ async function addAccount(name: string, mode: "max" | "console" = "console") {
   try {
     const tokens = await exchangeCode(code, verifier)
     const id = crypto.randomUUID()
+    const supportedModels = PLAN_MODELS[mode].join(',')
     
     const insertStmt = db.prepare(
-      `INSERT INTO accounts (id, name, refresh_token, access_token, expires_at, created_at) 
-       VALUES (?, ?, ?, ?, ?, ?)`
+      `INSERT INTO accounts (id, name, refresh_token, access_token, expires_at, created_at, plan_type, supported_models) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
     )
-    insertStmt.run(id, name, tokens.refresh, tokens.access, tokens.expires, Date.now())
+    insertStmt.run(id, name, tokens.refresh, tokens.access, tokens.expires, Date.now(), mode, supportedModels)
     
     console.log(`✅ Account "${name}" added successfully!`)
+    console.log(`   Plan: ${mode.toUpperCase()}`)
+    console.log(`   Supported models: ${PLAN_MODELS[mode].join(', ')}`)
+    if (mode === 'max') {
+      console.log(`   🎯 This account supports Claude 3 Opus (premium model)`)
+    }
   } catch (error) {
     console.error("❌ Failed to exchange code:", error)
     process.exit(1)
@@ -169,7 +197,7 @@ function listAccounts() {
   }
 
   console.log("\n📊 Claude Accounts:")
-  console.log("─".repeat(80))
+  console.log("─".repeat(100))
   
   for (const account of accounts) {
     const lastUsed = account.last_used 
@@ -179,14 +207,25 @@ function listAccounts() {
       ? "✅ Valid" 
       : "⏳ Expired"
     
-    console.log(`\n🔑 ${account.name}`)
+    const planType = account.plan_type || 'console'
+    const supportedModels = account.supported_models || 'claude-3-5-sonnet-20241022,claude-3-haiku-20240307'
+    const modelList = supportedModels.split(',')
+    const hasOpus = modelList.includes('claude-3-opus-20240229')
+    
+    console.log(`\n🔑 ${account.name} ${hasOpus ? '🎯' : ''}`)
     console.log(`   ID: ${account.id}`)
+    console.log(`   Plan: ${planType.toUpperCase()} ${hasOpus ? '(Opus enabled)' : ''}`)
+    console.log(`   Models: ${modelList.length} supported`)
+    modelList.forEach(model => {
+      const isOpus = model === 'claude-3-opus-20240229'
+      console.log(`     ${isOpus ? '🎯' : '•'} ${model}`)
+    })
     console.log(`   Created: ${new Date(account.created_at).toLocaleString()}`)
     console.log(`   Last Used: ${lastUsed}`)
     console.log(`   Requests: ${account.request_count}`)
     console.log(`   Token: ${tokenStatus}`)
   }
-  console.log("\n" + "─".repeat(80))
+  console.log("\n" + "─".repeat(100))
 }
 
 function removeAccount(name: string) {
@@ -226,24 +265,33 @@ function clearHistory() {
 
 function showHelp() {
   console.log(`
-Claude Load Balancer CLI
+Claude Load Balancer CLI - Model-Aware Account Management
 
 Usage:
   npm run cli <command> [options]
 
 Commands:
   add <name> [--mode max|console]  Add a new Claude account
-  list                              List all accounts and their stats
+  list                              List all accounts with plan and model info
   remove <name>                     Remove an account
   reset-stats                       Reset usage statistics for all accounts
   clear-history                     Clear all request history
   help                              Show this help message
 
+Plan Types:
+  console (default)                 Pro Plan - Sonnet & Haiku only
+  max                               Max Plan - All models including Opus 🎯
+
 Examples:
-  npm run cli add personal          Add a personal account (console.anthropic.com)
-  npm run cli add work -- --mode max   Add a work account (claude.ai)
-  npm run cli list                   Show all accounts
+  npm run cli add personal          Add Pro plan account (console.anthropic.com)
+  npm run cli add work -- --mode max   Add Max plan account (claude.ai) with Opus
+  npm run cli list                   Show all accounts with model support
   npm run cli remove personal        Remove the personal account
+
+Model Routing:
+  • Opus requests automatically route to Max plan accounts
+  • Sonnet/Haiku requests can use any account type
+  • Requests denied if no compatible account available
 `)
 }
 

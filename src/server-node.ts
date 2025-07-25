@@ -35,9 +35,23 @@ db.exec(`
     expires_at INTEGER,
     created_at INTEGER NOT NULL,
     last_used INTEGER,
-    request_count INTEGER DEFAULT 0
+    request_count INTEGER DEFAULT 0,
+    plan_type TEXT DEFAULT 'console',
+    supported_models TEXT DEFAULT 'claude-3-5-sonnet-20241022,claude-3-haiku-20240307'
   )
 `)
+
+// Add new columns to existing tables if they don't exist
+try {
+  db.exec(`ALTER TABLE accounts ADD COLUMN plan_type TEXT DEFAULT 'console'`)
+} catch (e) {
+  // Column already exists
+}
+try {
+  db.exec(`ALTER TABLE accounts ADD COLUMN supported_models TEXT DEFAULT 'claude-3-5-sonnet-20241022,claude-3-haiku-20240307'`)
+} catch (e) {
+  // Column already exists
+}
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS requests (
@@ -66,6 +80,65 @@ interface Account {
   created_at: number
   last_used: number | null
   request_count: number
+  plan_type: 'console' | 'max'
+  supported_models: string
+}
+
+// Model configuration
+const MODEL_RESTRICTIONS = {
+  'claude-3-opus-20240229': ['max'], // Opus only available on Max plan
+  'claude-3-5-sonnet-20241022': ['console', 'max'], // Sonnet available on both
+  'claude-3-haiku-20240307': ['console', 'max'], // Haiku available on both
+  'claude-3-5-haiku-20241022': ['console', 'max'], // New Haiku available on both
+} as const
+
+const PLAN_MODELS = {
+  console: ['claude-3-5-sonnet-20241022', 'claude-3-haiku-20240307', 'claude-3-5-haiku-20241022'],
+  max: ['claude-3-5-sonnet-20241022', 'claude-3-haiku-20240307', 'claude-3-5-haiku-20241022', 'claude-3-opus-20240229']
+} as const
+
+function extractModelFromRequest(requestBody: Buffer | null): string | null {
+  if (!requestBody || requestBody.length === 0) return null
+  
+  try {
+    const bodyStr = requestBody.toString('utf8')
+    const parsed = JSON.parse(bodyStr)
+    return parsed.model || null
+  } catch (error) {
+    log.warn('Failed to parse request body for model extraction', { error: error instanceof Error ? error.message : error })
+    return null
+  }
+}
+
+function canAccountHandleModel(account: Account, model: string): boolean {
+  const supportedModels = account.supported_models.split(',')
+  return supportedModels.includes(model)
+}
+
+function getCompatibleAccounts(accounts: Account[], model: string | null): Account[] {
+  if (!model) {
+    // No specific model requested, return all accounts
+    return accounts
+  }
+  
+  // Check if model exists in our restrictions
+  if (!(model in MODEL_RESTRICTIONS)) {
+    log.warn(`Unknown model requested: ${model}. Allowing all accounts.`)
+    return accounts
+  }
+  
+  // Filter accounts that support this model
+  const compatibleAccounts = accounts.filter(account => 
+    canAccountHandleModel(account, model)
+  )
+  
+  if (compatibleAccounts.length === 0) {
+    log.error(`No accounts support model: ${model}`)
+    return []
+  }
+  
+  log.info(`Model ${model} compatible with ${compatibleAccounts.length} account(s): ${compatibleAccounts.map(a => a.name).join(', ')}`)
+  return compatibleAccounts
 }
 
 async function refreshAccessToken(account: Account): Promise<string> {
@@ -459,9 +532,28 @@ const server = http.createServer(async (req, res) => {
     return
   }
 
+  // Generate request ID and track start time
+  const requestId = crypto.randomUUID()
+  const startTime = Date.now()
+  
+  // Read request body
+  const requestBody = await getRequestBody(req)
+  
+  // Extract model from request body for routing
+  const requestedModel = extractModelFromRequest(requestBody)
+  
+  // Log incoming request with model info
+  log.info(`Incoming request: ${req.method} ${pathname}`, {
+    requestId,
+    method: req.method,
+    path: pathname,
+    model: requestedModel,
+    headers: req.headers
+  })
+
   // Get all available accounts
-  const accounts = getAvailableAccounts()
-  if (accounts.length === 0) {
+  const allAccounts = getAvailableAccounts()
+  if (allAccounts.length === 0) {
     log.error("No accounts available")
     const response = JSON.stringify({ 
       error: "No accounts available. Please add accounts using the CLI." 
@@ -471,25 +563,24 @@ const server = http.createServer(async (req, res) => {
     return
   }
 
-  // Generate request ID and track start time
-  const requestId = crypto.randomUUID()
-  const startTime = Date.now()
-  
-  // Read request body
-  const requestBody = await getRequestBody(req)
-  
-  // Log incoming request
-  log.info(`Incoming request: ${req.method} ${pathname}`, {
-    requestId,
-    method: req.method,
-    path: pathname,
-    headers: req.headers
-  })
+  // Filter accounts based on model compatibility
+  const compatibleAccounts = getCompatibleAccounts(allAccounts, requestedModel)
+  if (compatibleAccounts.length === 0) {
+    log.error(`No accounts support the requested model: ${requestedModel}`)
+    const response = JSON.stringify({ 
+      error: `No accounts support the requested model: ${requestedModel}. Opus requires Max plan accounts.`,
+      requestedModel,
+      availableAccounts: allAccounts.map(a => ({ name: a.name, plan: a.plan_type, models: a.supported_models }))
+    })
+    res.writeHead(403, { "Content-Type": "application/json" })
+    res.end(response)
+    return
+  }
 
-  // Try each account until one succeeds
-  const errors: Array<{ account: string; error: string; retries: number }> = []
+  // Try each compatible account until one succeeds
+  const errors: Array<{ account: string; error: string; retries: number; model: string | null }> = []
   
-  for (const account of accounts) {
+  for (const account of compatibleAccounts) {
     let lastError: string | null = null
     let retryDelay = RETRY_DELAY_MS
     
@@ -593,7 +684,8 @@ const server = http.createServer(async (req, res) => {
     errors.push({
       account: account.name,
       error: lastError || "Unknown error",
-      retries: RETRY_COUNT
+      retries: RETRY_COUNT,
+      model: requestedModel
     })
   }
 

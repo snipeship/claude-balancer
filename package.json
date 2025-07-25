@@ -11,6 +11,7 @@
     "build": "tsc",
     "dev": "tsx watch src/server-node.ts",
     "test": "node test-setup.js",
+    "test:routing": "node test-model-routing.js",
     "kill-port": "echo 'Usage: npm run kill-port 8080' && lsof -ti:${PORT:-8080} | xargs kill",
     "original:start": "tsx src/server.ts",
     "original:cli": "tsx src/cli.ts"
