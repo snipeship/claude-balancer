@@ -832,6 +832,8 @@ const server = http.createServer(async (req, res) => {
                         <th>Name</th>
                         <th>Requests</th>
                         <th>Usage Window</th>
+                        <th>Tokens Used</th>
+                        <th>Quota Remaining</th>
                         <th>Next Reset</th>
                         <th>Token Status</th>
                     </tr>
@@ -915,6 +917,37 @@ const server = http.createServer(async (req, res) => {
             } else {
                 return \`\${seconds}s\`;
             }
+        }
+
+        function formatTokenUsage(inputTokens, outputTokens) {
+            if (!inputTokens && !outputTokens) return '-';
+            
+            const formatNum = (num) => {
+                if (!num) return '0';
+                if (num < 1000) return num.toString();
+                if (num < 1000000) return (num / 1000).toFixed(1) + 'K';
+                return (num / 1000000).toFixed(1) + 'M';
+            };
+            
+            return \`\${formatNum(inputTokens)} in / \${formatNum(outputTokens)} out\`;
+        }
+
+        function formatQuotaRemaining(quotaRemaining) {
+            if (quotaRemaining === null || quotaRemaining === undefined) return '-';
+            
+            const percentage = Math.round(quotaRemaining * 100);
+            let color = '#10b981'; // green
+            let icon = '🟢';
+            
+            if (percentage < 25) {
+                color = '#ef4444'; // red
+                icon = '🔴';
+            } else if (percentage < 50) {
+                color = '#f59e0b'; // yellow
+                icon = '🟡';
+            }
+            
+            return \`<span style="color: \${color};">\${icon} \${percentage}%</span>\`;
         }
 
         function updateStrategyDescription(strategy) {
@@ -1025,6 +1058,8 @@ const server = http.createServer(async (req, res) => {
                             \`🟢 Active (\${account.requestsInWindow} reqs)\` : 
                             (account.windowStarted ? '⭕ Expired' : '⚪ Not Started')
                         }</td>
+                        <td>\${formatTokenUsage(account.input_tokens_window, account.output_tokens_window)}</td>
+                        <td>\${formatQuotaRemaining(account.estimated_quota_remaining)}</td>
                         <td>\${formatTimeUntilReset(account.timeUntilReset)}</td>
                         <td>\${account.token_valid ? '✅ Valid' : '❌ Expired'}</td>
                     </tr>
@@ -1128,6 +1163,9 @@ const server = http.createServer(async (req, res) => {
         usage_window_requests,
         plan_type,
         supported_models,
+        input_tokens_window,
+        output_tokens_window,
+        estimated_quota_remaining,
         CASE 
           WHEN expires_at > ? THEN 1 
           ELSE 0 
