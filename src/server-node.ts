@@ -77,6 +77,16 @@ try {
 } catch (e) {
   // Column already exists
 }
+try {
+  db.exec(`ALTER TABLE accounts ADD COLUMN detected_tier TEXT DEFAULT NULL`)
+} catch (e) {
+  // Column already exists
+}
+try {
+  db.exec(`ALTER TABLE accounts ADD COLUMN last_tier_detection INTEGER DEFAULT NULL`)
+} catch (e) {
+  // Column already exists
+}
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS requests (
@@ -154,6 +164,8 @@ interface Account {
   input_tokens_window: number
   output_tokens_window: number
   estimated_quota_remaining: number
+  detected_tier: string | null
+  last_tier_detection: number | null
 }
 
 // Model configuration
@@ -475,6 +487,62 @@ function updateQuotaEstimation(accountId: string) {
   stmt.run(remainingQuota, accountId)
 }
 
+// Detect actual plan tier by testing model availability
+async function detectPlanTier(account: Account): Promise<{tier: string, availableModels: string[]}> {
+  const testModels = [
+    { name: 'claude-3-5-haiku-20241022', tier: 'pro' },    // Available on both
+    { name: 'claude-3-5-sonnet-20241022', tier: 'pro' },  // Available on both
+    { name: 'claude-3-opus-20240229', tier: 'max' }       // Max plan only
+  ]
+  
+  const availableModels: string[] = []
+  let detectedTier = 'pro' // Default to pro
+  
+  try {
+    const accessToken = await getValidAccessToken(account)
+    
+    for (const model of testModels) {
+      try {
+        const testBody = JSON.stringify({
+          model: model.name,
+          max_tokens: 1,
+          messages: [{ role: "user", content: "Hi" }]
+        })
+        
+        const response = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${accessToken}`,
+            "Content-Type": "application/json",
+            "anthropic-version": "2023-06-01",
+            "user-agent": "claude-load-balancer-detector/1.0.0",
+          },
+          body: testBody
+        })
+        
+        // If we get a non-403 response, the model is available
+        if (response.status !== 403) {
+          availableModels.push(model.name)
+          if (model.tier === 'max') {
+            detectedTier = 'max'
+          }
+        }
+        
+        // Small delay between tests
+        await new Promise(resolve => setTimeout(resolve, 500))
+        
+      } catch (error) {
+        log.warn(`Failed to test model ${model.name} for account ${account.name}:`, error)
+      }
+    }
+    
+  } catch (error) {
+    log.error(`Failed to detect plan tier for account ${account.name}:`, error)
+  }
+  
+  return { tier: detectedTier, availableModels }
+}
+
 function getUsageWindowInfo(account: Account) {
   if (!account.usage_window_start) {
     return {
@@ -512,12 +580,8 @@ async function sendTickerRequest(account: Account): Promise<boolean> {
       messages: [{ role: "user", content: TICKER_MESSAGE }]
     })
     
-    // Use correct API endpoint based on account plan
-    const baseUrl = account.plan_type === 'max' 
-      ? "https://claude.ai"  // Max plan uses claude.ai API
-      : "https://api.anthropic.com"  // Console plan uses api.anthropic.com
-    
-    const response = await fetch(`${baseUrl}/v1/messages`, {
+    // Both Max and Pro plans use the same API endpoint
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
         "Authorization": `Bearer ${accessToken}`,
@@ -851,12 +915,18 @@ const server = http.createServer(async (req, res) => {
                         </select>
                     </div>
                 </div>
-                <div id="strategyDescription" style="font-style: italic; opacity: 0.9; max-width: 300px; text-align: right; font-size: 14px;"></div>
+                <div style="display: flex; align-items: center; gap: 15px;">
+                    <button id="detectPlansBtn" style="padding: 8px 16px; border: 1px solid rgba(255,255,255,0.3); border-radius: 6px; background: rgba(255,255,255,0.1); color: white; cursor: pointer; font-weight: 500; font-size: 14px;">
+                        🔍 Detect Plans
+                    </button>
+                    <div id="strategyDescription" style="font-style: italic; opacity: 0.9; max-width: 250px; text-align: right; font-size: 14px;"></div>
+                </div>
             </div>
             <table id="accountsTable">
                 <thead>
                     <tr>
                         <th>Name</th>
+                        <th>Plan Tier</th>
                         <th>Requests</th>
                         <th>Usage Window</th>
                         <th>Tokens Used</th>
@@ -977,6 +1047,26 @@ const server = http.createServer(async (req, res) => {
             return \`<span style="color: \${color};">\${icon} \${percentage}%</span>\`;
         }
 
+        function formatPlanTier(detectedTier, originalPlanType, lastDetection) {
+            if (!detectedTier) {
+                return \`<span style="color: #6b7280;" title="Click 'Detect Plans' to scan model availability">
+                    \${originalPlanType === 'max' ? '🎯 Max' : '📝 Pro'} <small>(unconfirmed)</small>
+                </span>\`;
+            }
+            
+            const isRecent = lastDetection && (Date.now() - lastDetection) < 24 * 60 * 60 * 1000; // 24 hours
+            const ageColor = isRecent ? '#10b981' : '#f59e0b';
+            const ageText = isRecent ? 'verified' : 'needs refresh';
+            
+            const tierIcon = detectedTier === 'max' ? '🎯' : '📝';
+            const tierName = detectedTier === 'max' ? 'Max' : 'Pro';
+            const tierColor = detectedTier === 'max' ? '#3b82f6' : '#10b981';
+            
+            return \`<span style="color: \${tierColor};">
+                \${tierIcon} \${tierName} <small style="color: \${ageColor};">(\${ageText})</small>
+            </span>\`;
+        }
+
         function updateStrategyDescription(strategy) {
             const descriptions = {
                 'round_robin': 'Starts all accounts simultaneously for maximum initial capacity',
@@ -1008,6 +1098,44 @@ const server = http.createServer(async (req, res) => {
             } catch (error) {
                 console.error('Failed to update strategy:', error);
                 alert('Failed to update load balancing strategy');
+            }
+        }
+
+        async function detectPlans() {
+            const btn = document.getElementById('detectPlansBtn');
+            const originalText = btn.textContent;
+            
+            btn.textContent = '🔄 Detecting...';
+            btn.disabled = true;
+            
+            try {
+                const response = await fetch('/api/detect-plans', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    btn.textContent = '✅ Detection Complete';
+                    setTimeout(() => {
+                        btn.textContent = originalText;
+                        btn.disabled = false;
+                    }, 3000);
+                    
+                    // Refresh dashboard to show updated plan info
+                    updateDashboard();
+                } else {
+                    throw new Error(result.error || 'Detection failed');
+                }
+                
+            } catch (error) {
+                console.error('Plan detection failed:', error);
+                btn.textContent = '❌ Detection Failed';
+                setTimeout(() => {
+                    btn.textContent = originalText;
+                    btn.disabled = false;
+                }, 3000);
             }
         }
 
@@ -1099,6 +1227,7 @@ const server = http.createServer(async (req, res) => {
                 accountsTableBody.innerHTML = accounts.map(account => \`
                     <tr>
                         <td>\${account.name} \${account.plan_type === 'max' ? '🎯' : ''}</td>
+                        <td>\${formatPlanTier(account.detected_tier, account.plan_type, account.last_tier_detection)}</td>
                         <td>\${account.request_count}</td>
                         <td>\${account.windowActive ? 
                             \`🟢 Active (\${account.requestsInWindow} reqs)\` : 
@@ -1149,6 +1278,10 @@ const server = http.createServer(async (req, res) => {
                 
                 // Add event listener for strategy changes
                 strategySelect.addEventListener('change', handleStrategyChange);
+                
+                // Add event listener for plan detection
+                const detectPlansBtn = document.getElementById('detectPlansBtn');
+                detectPlansBtn.addEventListener('click', detectPlans);
                 
                 // Add toggle for model matrix
                 const toggleButton = document.getElementById('toggleModelMatrix');
@@ -1226,6 +1359,8 @@ const server = http.createServer(async (req, res) => {
         input_tokens_window,
         output_tokens_window,
         estimated_quota_remaining,
+        detected_tier,
+        last_tier_detection,
         CASE 
           WHEN expires_at > ? THEN 1 
           ELSE 0 
@@ -1297,6 +1432,59 @@ const server = http.createServer(async (req, res) => {
         log.error('Failed to update configuration:', error)
         res.writeHead(400, { "Content-Type": "application/json" })
         res.end(JSON.stringify({ error: 'Invalid request body' }))
+        return
+      }
+    }
+  }
+
+  if (pathname === "/api/detect-plans") {
+    if (req.method === 'POST') {
+      // Trigger plan detection for all accounts
+      try {
+        const stmt = db.prepare(`SELECT * FROM accounts`)
+        const accounts = stmt.all() as Account[]
+        
+        const detectionResults = []
+        
+        for (const account of accounts) {
+          try {
+            log.info(`🔍 Detecting plan tier for account ${account.name}...`)
+            const detection = await detectPlanTier(account)
+            
+            // Update database with detected info
+            const updateStmt = db.prepare(`
+              UPDATE accounts 
+              SET detected_tier = ?, supported_models = ?, last_tier_detection = ?
+              WHERE id = ?
+            `)
+            updateStmt.run(detection.tier, detection.availableModels.join(','), Date.now(), account.id)
+            
+            detectionResults.push({
+              name: account.name,
+              detectedTier: detection.tier,
+              availableModels: detection.availableModels,
+              originalPlanType: account.plan_type
+            })
+            
+            log.info(`✅ Account ${account.name}: detected ${detection.tier} tier with ${detection.availableModels.length} models`)
+            
+          } catch (error) {
+            log.error(`❌ Failed to detect plan for ${account.name}:`, error)
+            detectionResults.push({
+              name: account.name,
+              error: error instanceof Error ? error.message : String(error)
+            })
+          }
+        }
+        
+        res.writeHead(200, { "Content-Type": "application/json" })
+        res.end(JSON.stringify({ success: true, results: detectionResults }))
+        return
+        
+      } catch (error) {
+        log.error('Failed to detect plans:', error)
+        res.writeHead(500, { "Content-Type": "application/json" })
+        res.end(JSON.stringify({ error: 'Plan detection failed' }))
         return
       }
     }
@@ -1423,11 +1611,8 @@ const server = http.createServer(async (req, res) => {
           headers["anthropic-beta"] = req.headers["anthropic-beta"] as string
         }
         
-        // Forward request to correct API endpoint based on account plan
-        const baseUrl = account.plan_type === 'max' 
-          ? "https://claude.ai"  // Max plan uses claude.ai API
-          : "https://api.anthropic.com"  // Console plan uses api.anthropic.com
-        const anthropicUrl = `${baseUrl}${pathname}${parsedUrl.search || ''}`
+        // Both Max and Pro plans use the same API endpoint - difference is model availability
+        const anthropicUrl = `https://api.anthropic.com${pathname}${parsedUrl.search || ''}`
         const response = await fetch(anthropicUrl, {
           method: req.method,
           headers: headers,
