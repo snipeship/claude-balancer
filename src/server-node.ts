@@ -1,6 +1,7 @@
 import * as http from 'http'
 import * as url from 'url'
 import * as crypto from 'crypto'
+import { Readable } from 'stream'
 import Database from 'better-sqlite3'
 import fetch from 'node-fetch'
 
@@ -174,11 +175,13 @@ const MODEL_RESTRICTIONS = {
   'claude-3-5-sonnet-20241022': ['console', 'max'], // Sonnet available on both
   'claude-3-haiku-20240307': ['console', 'max'], // Haiku available on both
   'claude-3-5-haiku-20241022': ['console', 'max'], // New Haiku available on both
+  'claude-sonnet-4-20250514': ['console', 'max'], // Sonnet 4 available on both
+  'claude-opus-4-20250514': ['max'], // Opus 4 only available on Max plan
 } as const
 
 const PLAN_MODELS = {
-  console: ['claude-3-5-sonnet-20241022', 'claude-3-haiku-20240307', 'claude-3-5-haiku-20241022'],
-  max: ['claude-3-5-sonnet-20241022', 'claude-3-haiku-20240307', 'claude-3-5-haiku-20241022', 'claude-3-opus-20240229']
+  console: ['claude-3-5-sonnet-20241022', 'claude-3-haiku-20240307', 'claude-3-5-haiku-20241022', 'claude-sonnet-4-20250514'],
+  max: ['claude-3-5-sonnet-20241022', 'claude-3-haiku-20240307', 'claude-3-5-haiku-20241022', 'claude-3-opus-20240229', 'claude-sonnet-4-20250514', 'claude-opus-4-20250514']
 } as const
 
 function extractModelFromRequest(requestBody: Buffer | null): string | null {
@@ -915,12 +918,7 @@ const server = http.createServer(async (req, res) => {
                         </select>
                     </div>
                 </div>
-                <div style="display: flex; align-items: center; gap: 15px;">
-                    <button id="detectPlansBtn" style="padding: 8px 16px; border: 1px solid rgba(255,255,255,0.3); border-radius: 6px; background: rgba(255,255,255,0.1); color: white; cursor: pointer; font-weight: 500; font-size: 14px;">
-                        🔍 Detect Plans
-                    </button>
-                    <div id="strategyDescription" style="font-style: italic; opacity: 0.9; max-width: 250px; text-align: right; font-size: 14px;"></div>
-                </div>
+                <div id="strategyDescription" style="font-style: italic; opacity: 0.9; color: rgba(255,255,255,0.9); font-size: 14px;"></div>
             </div>
             <table id="accountsTable">
                 <thead>
@@ -1047,24 +1045,8 @@ const server = http.createServer(async (req, res) => {
             return \`<span style="color: \${color};">\${icon} \${percentage}%</span>\`;
         }
 
-        function formatPlanTier(detectedTier, originalPlanType, lastDetection) {
-            if (!detectedTier) {
-                return \`<span style="color: #6b7280;" title="Click 'Detect Plans' to scan model availability">
-                    \${originalPlanType === 'max' ? '🎯 Max' : '📝 Pro'} <small>(unconfirmed)</small>
-                </span>\`;
-            }
-            
-            const isRecent = lastDetection && (Date.now() - lastDetection) < 24 * 60 * 60 * 1000; // 24 hours
-            const ageColor = isRecent ? '#10b981' : '#f59e0b';
-            const ageText = isRecent ? 'verified' : 'needs refresh';
-            
-            const tierIcon = detectedTier === 'max' ? '🎯' : '📝';
-            const tierName = detectedTier === 'max' ? 'Max' : 'Pro';
-            const tierColor = detectedTier === 'max' ? '#3b82f6' : '#10b981';
-            
-            return \`<span style="color: \${tierColor};">
-                \${tierIcon} \${tierName} <small style="color: \${ageColor};">(\${ageText})</small>
-            </span>\`;
+        function formatPlanTier(originalPlanType) {
+            return originalPlanType === 'max' ? '🎯 Max' : '📝 Pro';
         }
 
         function updateStrategyDescription(strategy) {
@@ -1101,43 +1083,6 @@ const server = http.createServer(async (req, res) => {
             }
         }
 
-        async function detectPlans() {
-            const btn = document.getElementById('detectPlansBtn');
-            const originalText = btn.textContent;
-            
-            btn.textContent = '🔄 Detecting...';
-            btn.disabled = true;
-            
-            try {
-                const response = await fetch('/api/detect-plans', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' }
-                });
-                
-                const result = await response.json();
-                
-                if (result.success) {
-                    btn.textContent = '✅ Detection Complete';
-                    setTimeout(() => {
-                        btn.textContent = originalText;
-                        btn.disabled = false;
-                    }, 3000);
-                    
-                    // Refresh dashboard to show updated plan info
-                    updateDashboard();
-                } else {
-                    throw new Error(result.error || 'Detection failed');
-                }
-                
-            } catch (error) {
-                console.error('Plan detection failed:', error);
-                btn.textContent = '❌ Detection Failed';
-                setTimeout(() => {
-                    btn.textContent = originalText;
-                    btn.disabled = false;
-                }, 3000);
-            }
-        }
 
         function setupInlineEditing() {
             // Setup name editing
@@ -1194,37 +1139,6 @@ const server = http.createServer(async (req, res) => {
                     });
                 });
             });
-
-            // Setup plan tier re-authentication
-            document.querySelectorAll('.plan-tier-clickable').forEach(tierSpan => {
-                tierSpan.addEventListener('click', function() {
-                    const accountName = this.dataset.accountName;
-                    reAuthenticateAccount(accountName);
-                });
-            });
-        }
-
-        async function reAuthenticateAccount(accountName) {
-            try {
-                const response = await fetch('/api/reauth-account', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ accountName: accountName })
-                });
-                
-                const result = await response.json();
-                
-                if (result.success) {
-                    // Open OAuth URL in new window
-                    window.open(result.authUrl, '_blank', 'width=600,height=700');
-                    alert('Please complete authentication in the new window, then refresh this dashboard.');
-                } else {
-                    throw new Error(result.error || 'Failed to initiate re-authentication');
-                }
-                
-            } catch (error) {
-                alert('Re-authentication failed: ' + error.message);
-            }
         }
 
         function updateModelSummary(accounts) {
@@ -1251,16 +1165,20 @@ const server = http.createServer(async (req, res) => {
         function updateModelMatrix(accounts) {
             const allModels = [
                 'claude-3-5-sonnet-20241022',
+                'claude-sonnet-4-20250514',
                 'claude-3-haiku-20240307', 
                 'claude-3-5-haiku-20241022',
-                'claude-3-opus-20240229'
+                'claude-3-opus-20240229',
+                'claude-opus-4-20250514'
             ];
             
             const modelNames = {
                 'claude-3-5-sonnet-20241022': 'Sonnet 3.5',
+                'claude-sonnet-4-20250514': 'Sonnet 4 ⚡',
                 'claude-3-haiku-20240307': 'Haiku 3',
                 'claude-3-5-haiku-20241022': 'Haiku 3.5',
-                'claude-3-opus-20240229': 'Opus 3 🎯'
+                'claude-3-opus-20240229': 'Opus 3 🎯',
+                'claude-opus-4-20250514': 'Opus 4 🚀'
             };
             
             // Update headers
@@ -1320,10 +1238,7 @@ const server = http.createServer(async (req, res) => {
                             \${account.plan_type === 'max' ? '🎯' : ''}
                         </td>
                         <td>
-                            <span class="plan-tier-clickable" data-account-name="\${account.name}" style="cursor: pointer;" 
-                                  title="Click to re-authenticate account">
-                                \${formatPlanTier(account.detected_tier, account.plan_type, account.last_tier_detection)}
-                            </span>
+                            <span>\${formatPlanTier(account.plan_type)}</span>
                         </td>
                         <td>\${account.request_count}</td>
                         <td>\${account.windowActive ? 
@@ -1378,10 +1293,6 @@ const server = http.createServer(async (req, res) => {
                 
                 // Add event listener for strategy changes
                 strategySelect.addEventListener('change', handleStrategyChange);
-                
-                // Add event listener for plan detection
-                const detectPlansBtn = document.getElementById('detectPlansBtn');
-                detectPlansBtn.addEventListener('click', detectPlans);
                 
                 // Add toggle for model matrix
                 const toggleButton = document.getElementById('toggleModelMatrix');
@@ -1537,7 +1448,8 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
-  if (pathname === "/api/detect-plans") {
+  // Removed /api/detect-plans endpoint
+  if (false && pathname === "/api/detect-plans") {
     if (req.method === 'POST') {
       // Trigger plan detection for all accounts
       try {
@@ -1635,7 +1547,8 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
-  if (pathname === "/api/reauth-account") {
+  // Removed /api/reauth-account endpoint - use CLI instead
+  if (false && pathname === "/api/reauth-account") {
     if (req.method === 'POST') {
       try {
         const requestBodyStr = requestBody.toString()
@@ -1870,84 +1783,61 @@ const server = http.createServer(async (req, res) => {
           retry: retry > 0 ? retry + 1 : undefined
         })
 
-        // Extract token usage from response
-        let inputTokens: number | null = null
-        let outputTokens: number | null = null
+        // Extract request info for token estimation (safe for streaming)
         let modelUsed: string | null = null
+        let estimatedInputTokens: number | null = null
         
         try {
-          // Parse request body to get model
           const requestBodyStr = requestBody.toString()
           const requestJson = JSON.parse(requestBodyStr)
           modelUsed = requestJson.model || null
           
-          // Read response body to extract token usage
-          const responseBodyBuffer = Buffer.from(await response.arrayBuffer())
-          const responseBodyStr = responseBodyBuffer.toString()
-          const responseJson = JSON.parse(responseBodyStr)
-          
-          if (responseJson.usage) {
-            inputTokens = responseJson.usage.input_tokens || null
-            outputTokens = responseJson.usage.output_tokens || null
-            
-            // Update account token tracking
-            if (inputTokens && outputTokens) {
-              updateAccountTokenUsage(account.id, inputTokens, outputTokens, modelUsed)
-            }
+          // Estimate input tokens from request content
+          if (requestJson.messages && Array.isArray(requestJson.messages)) {
+            const totalContent = requestJson.messages
+              .map((msg: any) => msg.content || '')
+              .join(' ')
+            // Rough estimation: ~4 characters per token
+            estimatedInputTokens = Math.ceil(totalContent.length / 4)
           }
-          
-          // Update usage statistics only after successful request
-          updateAccountUsage(account.id)
-
-          // Save successful request to database with token tracking
-          const stmt = db.prepare(`
-            INSERT INTO requests (id, timestamp, method, path, account_used, status_code, success, response_time_ms, failover_attempts, input_tokens, output_tokens, model_used)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-          `)
-          stmt.run(requestId, Date.now(), req.method, pathname, account.name, response.status, 1, responseTime, errors.length, inputTokens, outputTokens, modelUsed)
-
-          // Clone response headers
-          const responseHeaders: Record<string, string> = {}
-          response.headers.forEach((value, key) => {
-            responseHeaders[key] = value
-          })
-          responseHeaders["X-Proxy-Account"] = account.name
-          responseHeaders["X-Request-Id"] = requestId
-          
-          // Return proxied response with buffered body
-          res.writeHead(response.status, responseHeaders)
-          res.end(responseBodyBuffer)
-          return
-          
         } catch (e) {
-          // Token extraction failed, fall back to streaming response
-          log.warn(`Failed to extract tokens for request ${requestId}:`, e)
-          
-          // Update usage statistics without token data
-          updateAccountUsage(account.id)
+          // Ignore parsing errors
+        }
 
-          // Save successful request to database without token data
-          const stmt = db.prepare(`
-            INSERT INTO requests (id, timestamp, method, path, account_used, status_code, success, response_time_ms, failover_attempts, input_tokens, output_tokens, model_used)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-          `)
-          stmt.run(requestId, Date.now(), req.method, pathname, account.name, response.status, 1, responseTime, errors.length, null, null, modelUsed)
+        // Update usage statistics and token tracking
+        updateAccountUsage(account.id)
+        
+        // Update token usage with estimation (better than no tracking)
+        if (estimatedInputTokens && modelUsed) {
+          // Estimate output tokens as roughly 1/3 of input for streaming responses
+          const estimatedOutputTokens = Math.ceil(estimatedInputTokens / 3)
+          log.info(`Token estimation for ${account.name}: ${estimatedInputTokens} input, ${estimatedOutputTokens} output (model: ${modelUsed})`)
+          updateAccountTokenUsage(account.id, estimatedInputTokens, estimatedOutputTokens, modelUsed)
+        } else {
+          log.warn(`No token estimation possible: estimatedInputTokens=${estimatedInputTokens}, modelUsed=${modelUsed}`)
+        }
 
-          // Clone response headers for fallback
-          const responseHeaders: Record<string, string> = {}
-          response.headers.forEach((value, key) => {
-            responseHeaders[key] = value
-          })
-          responseHeaders["X-Proxy-Account"] = account.name
-          responseHeaders["X-Request-Id"] = requestId
-          
-          // Return proxied response via stream (fallback)
-          res.writeHead(response.status, responseHeaders)
-          if (response.body) {
-            response.body.pipe(res)
-          } else {
-            res.end()
-          }
+        // Save successful request to database with token estimates
+        const stmt = db.prepare(`
+          INSERT OR REPLACE INTO requests (id, timestamp, method, path, account_used, status_code, success, response_time_ms, failover_attempts, input_tokens, output_tokens, model_used)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `)
+        stmt.run(requestId, Date.now(), req.method, pathname, account.name, response.status, 1, responseTime, errors.length, estimatedInputTokens, estimatedInputTokens ? Math.ceil(estimatedInputTokens / 3) : null, modelUsed)
+
+        // Clone response headers
+        const responseHeaders: Record<string, string> = {}
+        response.headers.forEach((value, key) => {
+          responseHeaders[key] = value
+        })
+        responseHeaders["X-Proxy-Account"] = account.name
+        responseHeaders["X-Request-Id"] = requestId
+        
+        // Return proxied response
+        res.writeHead(response.status, responseHeaders)
+        if (response.body) {
+          response.body.pipe(res)
+        } else {
+          res.end()
         }
         return
       } catch (error) {
@@ -1976,7 +1866,7 @@ const server = http.createServer(async (req, res) => {
   
   // Save failed request to database
   const stmt = db.prepare(`
-    INSERT INTO requests (id, timestamp, method, path, account_used, status_code, success, error_message, response_time_ms, failover_attempts, input_tokens, output_tokens, model_used)
+    INSERT OR REPLACE INTO requests (id, timestamp, method, path, account_used, status_code, success, error_message, response_time_ms, failover_attempts, input_tokens, output_tokens, model_used)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `)
   
