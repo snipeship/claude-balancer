@@ -1,12 +1,16 @@
 {
-	"private": true,
-	"name": "claudeflare",
+	"name": "ccflare",
+	"version": "0.0.2",
+	"description": "Claude load balancer proxy",
+	"author": "",
+	"license": "MIT",
+	"main": "index.js",
 	"workspaces": [
 		"apps/*",
 		"packages/*"
 	],
 	"scripts": {
-		"claudeflare": "bun run build && bun run tui",
+		"ccflare": "bun run build && bun run tui",
 		"tui": "bun run apps/tui/src/main.ts",
 		"dev": "bun run tui",
 		"server": "bun run apps/server/src/server.ts",
