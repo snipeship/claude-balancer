@@ -1,6 +1,6 @@
-# Claudeflare Configuration Guide
+# ccflare Configuration Guide
 
-This guide covers all configuration options for Claudeflare, including file-based configuration, environment variables, and runtime API updates.
+This guide covers all configuration options for ccflare, including file-based configuration, environment variables, and runtime API updates.
 
 ## Table of Contents
 
@@ -16,20 +16,20 @@ This guide covers all configuration options for Claudeflare, including file-base
 
 ## Configuration Overview
 
-Claudeflare uses a flexible configuration system that supports:
+ccflare uses a flexible configuration system that supports:
 
 - **File-based configuration**: JSON configuration file for persistent settings
 - **Environment variables**: Override configuration for deployment flexibility
 - **Runtime updates**: Modify certain settings via API without restart
 
-Configuration is managed through the `@claudeflare/config` package, which provides automatic loading, validation, and change notifications.
+Configuration is managed through the `@ccflare/config` package, which provides automatic loading, validation, and change notifications.
 
 ## Configuration Precedence
 
 Configuration values are resolved in the following order (highest to lowest priority):
 
 1. **Environment variables** - Always take precedence when set
-2. **Configuration file** - Values from `~/.claudeflare/config.json` (or custom path)
+2. **Configuration file** - Values from `~/.ccflare/config.json` (or custom path)
 3. **Default values** - Built-in defaults when no other value is specified
 
 ### Special Cases
@@ -41,9 +41,9 @@ Configuration values are resolved in the following order (highest to lowest prio
 
 The configuration file is stored at:
 
-- **Linux/macOS**: `~/.config/claudeflare/claudeflare.json` (or `$XDG_CONFIG_HOME/claudeflare/claudeflare.json`)
-- **Windows**: `%LOCALAPPDATA%\claudeflare\claudeflare.json` (or `%APPDATA%\claudeflare\claudeflare.json`)
-- **Custom path**: Set via `CLAUDEFLARE_CONFIG_PATH` environment variable
+- **Linux/macOS**: `~/.config/ccflare/ccflare.json` (or `$XDG_CONFIG_HOME/ccflare/ccflare.json`)
+- **Windows**: `%LOCALAPPDATA%\ccflare\ccflare.json` (or `%APPDATA%\ccflare\ccflare.json`)
+- **Custom path**: Set via `ccflare_CONFIG_PATH` environment variable
 
 ### File Structure
 
@@ -89,7 +89,7 @@ The configuration file is stored at:
 |----------|------|---------|-------------|
 | `LOG_LEVEL` | string | `"INFO"` | Logging level: `DEBUG`, `INFO`, `WARN`, `ERROR` |
 | `LOG_FORMAT` | string | `"pretty"` | Log format: `"pretty"` or `"json"` |
-| `CLAUDEFLARE_DEBUG` | string | - | Set to `"1"` to enable debug mode with console output |
+| `ccflare_DEBUG` | string | - | Set to `"1"` to enable debug mode with console output |
 
 ## Environment Variables
 
@@ -105,7 +105,7 @@ The configuration file is stored at:
 | `SESSION_DURATION_MS` | `session_duration_ms` | number | `SESSION_DURATION_MS=3600000` |
 | `PORT` | `port` | number | `PORT=3000` |
 | `CF_STREAM_BODY_MAX_BYTES` | `stream_body_max_bytes` | number | `CF_STREAM_BODY_MAX_BYTES=524288` |
-| `CLAUDEFLARE_CONFIG_PATH` | - | string | `CLAUDEFLARE_CONFIG_PATH=/etc/claudeflare.json` |
+| `ccflare_CONFIG_PATH` | - | string | `ccflare_CONFIG_PATH=/etc/ccflare.json` |
 
 ### Additional Environment Variables
 
@@ -113,8 +113,8 @@ The configuration file is stored at:
 |----------|-------------|---------|
 | `LOG_LEVEL` | Set logging verbosity (DEBUG, INFO, WARN, ERROR) | `LOG_LEVEL=DEBUG` |
 | `LOG_FORMAT` | Set log output format (pretty, json) | `LOG_FORMAT=json` |
-| `CLAUDEFLARE_DEBUG` | Enable debug mode with console output | `CLAUDEFLARE_DEBUG=1` |
-| `CLAUDEFLARE_DB_PATH` | Custom database file path | `CLAUDEFLARE_DB_PATH=/var/lib/claudeflare/db.sqlite` |
+| `ccflare_DEBUG` | Enable debug mode with console output | `ccflare_DEBUG=1` |
+| `ccflare_DB_PATH` | Custom database file path | `ccflare_DB_PATH=/var/lib/ccflare/db.sqlite` |
 | `CF_PRICING_REFRESH_HOURS` | Hours between pricing data refreshes | `CF_PRICING_REFRESH_HOURS=12` |
 | `CF_PRICING_OFFLINE` | Disable online pricing updates | `CF_PRICING_OFFLINE=1` |
 
@@ -258,7 +258,7 @@ Environment variables:
 export PORT=3000
 export LOG_LEVEL=DEBUG
 export LOG_FORMAT=pretty
-export CLAUDEFLARE_DEBUG=1
+export ccflare_DEBUG=1
 export RETRY_ATTEMPTS=5
 ```
 
@@ -282,7 +282,7 @@ Leverage weighted strategies for tier-based routing:
 
 ### Automatic Validation
 
-Claudeflare performs validation on:
+ccflare performs validation on:
 
 1. **Strategy names**: Must be one of the valid strategy options (validated by `isValidStrategy`)
 2. **Numeric values**: Parsed and validated as integers/floats
@@ -314,24 +314,24 @@ If migrating from environment variables to file-based configuration:
 
 1. Create the configuration file:
    ```bash
-   mkdir -p ~/.config/claudeflare
+   mkdir -p ~/.config/ccflare
    ```
 
 2. Export current configuration:
    ```bash
-   curl http://localhost:8080/api/config > ~/.config/claudeflare/claudeflare.json
+   curl http://localhost:8080/api/config > ~/.config/ccflare/ccflare.json
    ```
 
 3. Edit and format the file:
    ```bash
-   jq '.' ~/.config/claudeflare/claudeflare.json > temp.json && mv temp.json ~/.config/claudeflare/claudeflare.json
+   jq '.' ~/.config/ccflare/ccflare.json > temp.json && mv temp.json ~/.config/ccflare/ccflare.json
    ```
 
 ### From Older Versions
 
 #### Pre-1.0 to Current
 
-1. **Configuration location**: Move from `~/.claudeflare/config.json` to platform-specific paths
+1. **Configuration location**: Move from `~/.ccflare/config.json` to platform-specific paths
 2. **Field naming**: Update any deprecated field names (none currently deprecated)
 3. **Strategy names**: Ensure using kebab-case strategy names (e.g., `"round-robin"` not `"round_robin"`)
 
@@ -340,7 +340,7 @@ If migrating from environment variables to file-based configuration:
 Always backup your configuration before upgrades:
 
 ```bash
-cp ~/.config/claudeflare/claudeflare.json ~/.config/claudeflare/claudeflare.json.backup
+cp ~/.config/ccflare/ccflare.json ~/.config/ccflare/ccflare.json.backup
 ```
 
 ### Rollback Procedure
@@ -356,8 +356,8 @@ If issues occur after configuration changes:
 ### Common Issues
 
 1. **Configuration not loading**:
-   - Check file permissions: `ls -la ~/.config/claudeflare/`
-   - Verify JSON syntax: `jq '.' ~/.config/claudeflare/claudeflare.json`
+   - Check file permissions: `ls -la ~/.config/ccflare/`
+   - Verify JSON syntax: `jq '.' ~/.config/ccflare/ccflare.json`
    - Check logs for parse errors
 
 2. **Environment variables not working**:
@@ -375,7 +375,7 @@ If issues occur after configuration changes:
 Enable comprehensive debugging:
 
 ```bash
-export CLAUDEFLARE_DEBUG=1
+export ccflare_DEBUG=1
 export LOG_LEVEL=DEBUG
 export LOG_FORMAT=json  # For structured logging
 ```

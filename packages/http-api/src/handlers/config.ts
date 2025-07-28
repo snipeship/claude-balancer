@@ -1,5 +1,5 @@
-import type { Config } from "@claudeflare/config";
-import { isValidStrategy, STRATEGIES } from "@claudeflare/core";
+import type { Config } from "@ccflare/config";
+import { isValidStrategy, STRATEGIES } from "@ccflare/core";
 import type { ConfigResponse, StrategyUpdateRequest } from "../types";
 import { BadRequest, jsonResponse } from "../utils/http-error";
 

@@ -1,18 +1,18 @@
-# Claudeflare Landing Page
+# ccflare Landing Page
 
-Static landing page for Claudeflare - showcasing how simple it is to never hit rate limits again.
+Static landing page for ccflare - showcasing how simple it is to never hit rate limits again.
 
 ## 🚀 Getting Started is This Simple
 
 ```bash
 # Clone and run - that's it!
-git clone https://github.com/snipeship/claudeflare
-cd claudeflare
+git clone https://github.com/snipeship/ccflare
+cd ccflare
 bun install
-bun run claudeflare
+bun run ccflare
 ```
 
-That single `bun run claudeflare` command gives you:
+That single `bun run ccflare` command gives you:
 - ✅ Full proxy server on port 8080
 - ✅ Interactive TUI for monitoring
 - ✅ Web dashboard at http://localhost:8080/dashboard
@@ -68,14 +68,14 @@ bun run build
    ```bash
    cd apps/lander
    bun run build
-   wrangler pages deploy dist --project-name=claudeflare-landing
+   wrangler pages deploy dist --project-name=ccflare-landing
    ```
 
 ## Features
 
-- Dark theme matching Claudeflare dashboard
+- Dark theme matching ccflare dashboard
 - Mobile responsive
 - Security headers configured
 - Optimized for performance
 - Static HTML/CSS (no JavaScript framework)
-- Real screenshots from actual Claudeflare usage
+- Real screenshots from actual ccflare usage

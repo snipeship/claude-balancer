@@ -1,12 +1,12 @@
-# Claudeflare 🛡️
+# ccflare 🛡️
 
 **Track Every Request. Go Low-Level. Never Hit Rate Limits Again.**
 
 The ultimate Claude API proxy with intelligent load balancing across multiple accounts. Full visibility into every request, response, and rate limit.
 
-![Claudeflare Dashboard](apps/lander/src/screenshot-dashboard.png)
+![ccflare Dashboard](apps/lander/src/screenshot-dashboard.png)
 
-## Why Claudeflare?
+## Why ccflare?
 
 - **🚀 Zero Rate Limit Errors** - Automatically distribute requests across multiple accounts
 - **📊 Request-Level Analytics** - Track latency, token usage, and costs in real-time  
@@ -18,12 +18,12 @@ The ultimate Claude API proxy with intelligent load balancing across multiple ac
 
 ```bash
 # Clone and install
-git clone https://github.com/snipeship/claudeflare
-cd claudeflare
+git clone https://github.com/snipeship/ccflare
+cd ccflare
 bun install
 
-# Start Claudeflare (TUI + Server)
-bun run claudeflare
+# Start ccflare (TUI + Server)
+bun run ccflare
 
 # Configure Claude SDK
 export ANTHROPIC_BASE_URL=http://localhost:8080
@@ -41,7 +41,7 @@ export ANTHROPIC_BASE_URL=http://localhost:8080
 - Cost estimation and budgeting
 
 ### 🛠️ Developer Tools
-- Interactive TUI (`bun run claudeflare`)
+- Interactive TUI (`bun run ccflare`)
 - Web dashboard (`http://localhost:8080/dashboard`)
 - CLI for account management
 - REST API for automation

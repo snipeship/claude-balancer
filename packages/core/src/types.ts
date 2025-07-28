@@ -1,4 +1,4 @@
-import type { RequestMeta } from "@claudeflare/types";
+import type { RequestMeta } from "@ccflare/types";
 import type { StrategyStore } from "./strategy-store";
 
 // Database row types that match the actual database schema
@@ -159,4 +159,4 @@ export function toRequest(row: RequestRow): Request {
 export const NO_ACCOUNT_ID = "no_account";
 
 // Re-export from types package for backwards compatibility
-export type { LogEvent, RequestMeta } from "@claudeflare/types";
+export type { LogEvent, RequestMeta } from "@ccflare/types";

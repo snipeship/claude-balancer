@@ -1,5 +1,5 @@
 import type { Database } from "bun:sqlite";
-import type { DatabaseOperations } from "@claudeflare/database";
+import type { DatabaseOperations } from "@ccflare/database";
 import type { RequestResponse } from "../types";
 
 /**

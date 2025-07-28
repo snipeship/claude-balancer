@@ -1,5 +1,5 @@
 {
-	"name": "@claudeflare/core-di",
+	"name": "@ccflare/core-di",
 	"version": "0.1.0",
 	"type": "module",
 	"main": "./src/index.ts",

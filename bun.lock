@@ -2,7 +2,7 @@
   "lockfileVersion": 1,
   "workspaces": {
     "": {
-      "name": "claudeflare",
+      "name": "ccflare",
       "devDependencies": {
         "@biomejs/biome": "2.1.2",
         "@types/bun": "latest",
@@ -11,50 +11,50 @@
       },
     },
     "apps/cli": {
-      "name": "@claudeflare/cli",
+      "name": "@ccflare/cli",
       "version": "0.1.0",
       "bin": {
-        "claudeflare": "./dist/cli",
+        "ccflare": "./dist/cli",
       },
       "dependencies": {
-        "@claudeflare/cli-commands": "workspace:*",
-        "@claudeflare/config": "workspace:*",
-        "@claudeflare/core": "workspace:*",
-        "@claudeflare/database": "workspace:*",
+        "@ccflare/cli-commands": "workspace:*",
+        "@ccflare/config": "workspace:*",
+        "@ccflare/core": "workspace:*",
+        "@ccflare/database": "workspace:*",
       },
     },
     "apps/lander": {
-      "name": "@claudeflare/lander",
+      "name": "@ccflare/lander",
       "version": "1.0.0",
     },
     "apps/server": {
-      "name": "@claudeflare/server",
+      "name": "@ccflare/server",
       "version": "0.1.0",
       "dependencies": {
-        "@claudeflare/config": "workspace:*",
-        "@claudeflare/core": "workspace:*",
-        "@claudeflare/core-di": "workspace:*",
-        "@claudeflare/dashboard-web": "workspace:*",
-        "@claudeflare/database": "workspace:*",
-        "@claudeflare/http-api": "workspace:*",
-        "@claudeflare/load-balancer": "workspace:*",
-        "@claudeflare/logger": "workspace:*",
-        "@claudeflare/proxy": "workspace:*",
-        "@claudeflare/types": "workspace:*",
+        "@ccflare/config": "workspace:*",
+        "@ccflare/core": "workspace:*",
+        "@ccflare/core-di": "workspace:*",
+        "@ccflare/dashboard-web": "workspace:*",
+        "@ccflare/database": "workspace:*",
+        "@ccflare/http-api": "workspace:*",
+        "@ccflare/load-balancer": "workspace:*",
+        "@ccflare/logger": "workspace:*",
+        "@ccflare/proxy": "workspace:*",
+        "@ccflare/types": "workspace:*",
       },
     },
     "apps/tui": {
-      "name": "claudeflare",
+      "name": "ccflare",
       "version": "1.0.0",
       "bin": {
-        "claudeflare": "./dist/claudeflare",
+        "ccflare": "./dist/ccflare",
       },
       "dependencies": {
-        "@claudeflare/config": "workspace:*",
-        "@claudeflare/core-di": "workspace:*",
-        "@claudeflare/database": "workspace:*",
-        "@claudeflare/logger": "workspace:*",
-        "@claudeflare/tui-core": "workspace:*",
+        "@ccflare/config": "workspace:*",
+        "@ccflare/core-di": "workspace:*",
+        "@ccflare/database": "workspace:*",
+        "@ccflare/logger": "workspace:*",
+        "@ccflare/tui-core": "workspace:*",
         "ink": "^6.0.0",
         "ink-select-input": "^6.0.0",
         "ink-spinner": "^5.0.0",
@@ -68,36 +68,36 @@
       },
     },
     "packages/cli-commands": {
-      "name": "@claudeflare/cli-commands",
+      "name": "@ccflare/cli-commands",
       "version": "0.1.0",
       "dependencies": {
-        "@claudeflare/config": "workspace:*",
-        "@claudeflare/core": "workspace:*",
-        "@claudeflare/core-di": "workspace:*",
-        "@claudeflare/database": "workspace:*",
-        "@claudeflare/providers": "workspace:*",
+        "@ccflare/config": "workspace:*",
+        "@ccflare/core": "workspace:*",
+        "@ccflare/core-di": "workspace:*",
+        "@ccflare/database": "workspace:*",
+        "@ccflare/providers": "workspace:*",
       },
     },
     "packages/config": {
-      "name": "@claudeflare/config",
+      "name": "@ccflare/config",
       "version": "0.1.0",
       "dependencies": {
-        "@claudeflare/core": "workspace:*",
+        "@ccflare/core": "workspace:*",
       },
     },
     "packages/core": {
-      "name": "@claudeflare/core",
+      "name": "@ccflare/core",
       "version": "0.1.0",
       "dependencies": {
-        "@claudeflare/types": "workspace:*",
+        "@ccflare/types": "workspace:*",
       },
     },
     "packages/core-di": {
-      "name": "@claudeflare/core-di",
+      "name": "@ccflare/core-di",
       "version": "0.1.0",
     },
     "packages/dashboard-web": {
-      "name": "@claudeflare/dashboard-web",
+      "name": "@ccflare/dashboard-web",
       "version": "1.0.0",
       "dependencies": {
         "@radix-ui/react-dialog": "^1.1.14",
@@ -132,73 +132,73 @@
       },
     },
     "packages/database": {
-      "name": "@claudeflare/database",
+      "name": "@ccflare/database",
       "version": "0.1.0",
       "dependencies": {
-        "@claudeflare/core": "workspace:*",
+        "@ccflare/core": "workspace:*",
       },
     },
     "packages/http-api": {
-      "name": "@claudeflare/http-api",
+      "name": "@ccflare/http-api",
       "version": "0.1.0",
       "dependencies": {
-        "@claudeflare/config": "workspace:*",
-        "@claudeflare/core": "workspace:*",
-        "@claudeflare/database": "workspace:*",
-        "@claudeflare/types": "workspace:*",
+        "@ccflare/config": "workspace:*",
+        "@ccflare/core": "workspace:*",
+        "@ccflare/database": "workspace:*",
+        "@ccflare/types": "workspace:*",
       },
     },
     "packages/load-balancer": {
-      "name": "@claudeflare/load-balancer",
+      "name": "@ccflare/load-balancer",
       "version": "0.1.0",
       "dependencies": {
-        "@claudeflare/core": "workspace:*",
-        "@claudeflare/database": "workspace:*",
-        "@claudeflare/logger": "workspace:*",
+        "@ccflare/core": "workspace:*",
+        "@ccflare/database": "workspace:*",
+        "@ccflare/logger": "workspace:*",
       },
     },
     "packages/logger": {
-      "name": "@claudeflare/logger",
+      "name": "@ccflare/logger",
       "version": "0.1.0",
       "dependencies": {
-        "@claudeflare/core": "workspace:*",
-        "@claudeflare/types": "workspace:*",
+        "@ccflare/core": "workspace:*",
+        "@ccflare/types": "workspace:*",
       },
     },
     "packages/providers": {
-      "name": "@claudeflare/providers",
+      "name": "@ccflare/providers",
       "version": "0.1.0",
       "dependencies": {
-        "@claudeflare/core": "workspace:*",
+        "@ccflare/core": "workspace:*",
       },
     },
     "packages/proxy": {
-      "name": "@claudeflare/proxy",
+      "name": "@ccflare/proxy",
       "version": "0.1.0",
       "dependencies": {
-        "@claudeflare/config": "workspace:*",
-        "@claudeflare/core": "workspace:*",
-        "@claudeflare/database": "workspace:*",
-        "@claudeflare/logger": "workspace:*",
-        "@claudeflare/providers": "workspace:*",
+        "@ccflare/config": "workspace:*",
+        "@ccflare/core": "workspace:*",
+        "@ccflare/database": "workspace:*",
+        "@ccflare/logger": "workspace:*",
+        "@ccflare/providers": "workspace:*",
       },
     },
     "packages/tui-core": {
-      "name": "@claudeflare/tui-core",
+      "name": "@ccflare/tui-core",
       "version": "1.0.0",
       "dependencies": {
-        "@claudeflare/cli-commands": "workspace:*",
-        "@claudeflare/core": "workspace:*",
-        "@claudeflare/database": "workspace:*",
-        "@claudeflare/logger": "workspace:*",
-        "@claudeflare/types": "workspace:*",
+        "@ccflare/cli-commands": "workspace:*",
+        "@ccflare/core": "workspace:*",
+        "@ccflare/database": "workspace:*",
+        "@ccflare/logger": "workspace:*",
+        "@ccflare/types": "workspace:*",
       },
       "devDependencies": {
         "@types/node": "^20.0.0",
       },
     },
     "packages/types": {
-      "name": "@claudeflare/types",
+      "name": "@ccflare/types",
       "version": "0.1.0",
     },
   },
@@ -227,37 +227,37 @@
 
     "@biomejs/cli-win32-x64": ["@biomejs/cli-win32-x64@2.1.2", "", { "os": "win32", "cpu": "x64" }, "sha512-9zajnk59PMpjBkty3bK2IrjUsUHvqe9HWwyAWQBjGLE7MIBjbX2vwv1XPEhmO2RRuGoTkVx3WCanHrjAytICLA=="],
 
-    "@claudeflare/cli": ["@claudeflare/cli@workspace:apps/cli"],
+    "@ccflare/cli": ["@ccflare/cli@workspace:apps/cli"],
 
-    "@claudeflare/cli-commands": ["@claudeflare/cli-commands@workspace:packages/cli-commands"],
+    "@ccflare/cli-commands": ["@ccflare/cli-commands@workspace:packages/cli-commands"],
 
-    "@claudeflare/config": ["@claudeflare/config@workspace:packages/config"],
+    "@ccflare/config": ["@ccflare/config@workspace:packages/config"],
 
-    "@claudeflare/core": ["@claudeflare/core@workspace:packages/core"],
+    "@ccflare/core": ["@ccflare/core@workspace:packages/core"],
 
-    "@claudeflare/core-di": ["@claudeflare/core-di@workspace:packages/core-di"],
+    "@ccflare/core-di": ["@ccflare/core-di@workspace:packages/core-di"],
 
-    "@claudeflare/dashboard-web": ["@claudeflare/dashboard-web@workspace:packages/dashboard-web"],
+    "@ccflare/dashboard-web": ["@ccflare/dashboard-web@workspace:packages/dashboard-web"],
 
-    "@claudeflare/database": ["@claudeflare/database@workspace:packages/database"],
+    "@ccflare/database": ["@ccflare/database@workspace:packages/database"],
 
-    "@claudeflare/http-api": ["@claudeflare/http-api@workspace:packages/http-api"],
+    "@ccflare/http-api": ["@ccflare/http-api@workspace:packages/http-api"],
 
-    "@claudeflare/lander": ["@claudeflare/lander@workspace:apps/lander"],
+    "@ccflare/lander": ["@ccflare/lander@workspace:apps/lander"],
 
-    "@claudeflare/load-balancer": ["@claudeflare/load-balancer@workspace:packages/load-balancer"],
+    "@ccflare/load-balancer": ["@ccflare/load-balancer@workspace:packages/load-balancer"],
 
-    "@claudeflare/logger": ["@claudeflare/logger@workspace:packages/logger"],
+    "@ccflare/logger": ["@ccflare/logger@workspace:packages/logger"],
 
-    "@claudeflare/providers": ["@claudeflare/providers@workspace:packages/providers"],
+    "@ccflare/providers": ["@ccflare/providers@workspace:packages/providers"],
 
-    "@claudeflare/proxy": ["@claudeflare/proxy@workspace:packages/proxy"],
+    "@ccflare/proxy": ["@ccflare/proxy@workspace:packages/proxy"],
 
-    "@claudeflare/server": ["@claudeflare/server@workspace:apps/server"],
+    "@ccflare/server": ["@ccflare/server@workspace:apps/server"],
 
-    "@claudeflare/tui-core": ["@claudeflare/tui-core@workspace:packages/tui-core"],
+    "@ccflare/tui-core": ["@ccflare/tui-core@workspace:packages/tui-core"],
 
-    "@claudeflare/types": ["@claudeflare/types@workspace:packages/types"],
+    "@ccflare/types": ["@ccflare/types@workspace:packages/types"],
 
     "@floating-ui/core": ["@floating-ui/core@1.7.2", "", { "dependencies": { "@floating-ui/utils": "^0.2.10" } }, "sha512-wNB5ooIKHQc+Kui96jE/n69rHFWAVoxn5CAzL1Xdd8FG03cgY3MLO+GF9U3W737fYDSgPWA6MReKhBQBop6Pcw=="],
 
@@ -397,7 +397,7 @@
 
     "class-variance-authority": ["class-variance-authority@0.7.1", "", { "dependencies": { "clsx": "^2.1.1" } }, "sha512-Ka+9Trutv7G8M6WT6SeiRWz792K5qEqIGEGzXKhAE6xOWAY6pPH8U+9IY3oCMv6kqTmLsv7Xh/2w2RigkePMsg=="],
 
-    "claudeflare": ["claudeflare@workspace:apps/tui"],
+    "ccflare": ["ccflare@workspace:apps/tui"],
 
     "cli-boxes": ["cli-boxes@3.0.0", "", {}, "sha512-/lzGpEWL/8PfI0BmBOPRwp0c/wFNX1RdUML3jK/RcSBA9T8mZDdQpqYBKtCFTOfQbwPqWEOpjqW+Fnayc0969g=="],
 

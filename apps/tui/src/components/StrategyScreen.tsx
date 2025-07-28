@@ -1,4 +1,4 @@
-import * as tuiCore from "@claudeflare/tui-core";
+import * as tuiCore from "@ccflare/tui-core";
 import { Box, Text, useInput } from "ink";
 import SelectInput from "ink-select-input";
 import { useCallback, useEffect, useState } from "react";

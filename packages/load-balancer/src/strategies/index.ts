@@ -3,9 +3,9 @@ import type {
 	LoadBalancingStrategy,
 	RequestMeta,
 	StrategyStore,
-} from "@claudeflare/core";
-import { isAccountAvailable } from "@claudeflare/core";
-import { Logger } from "@claudeflare/logger";
+} from "@ccflare/core";
+import { isAccountAvailable } from "@ccflare/core";
+import { Logger } from "@ccflare/logger";
 
 export class SessionStrategy implements LoadBalancingStrategy {
 	private sessionDurationMs: number;

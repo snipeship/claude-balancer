@@ -1,10 +1,10 @@
-# Claudeflare Deployment Documentation
+# ccflare Deployment Documentation
 
 ## Overview
 
-Claudeflare is a load balancer proxy for Claude API accounts that can be deployed in various configurations, from simple local development to production-grade distributed systems. This document covers all deployment options, from single-instance setups to scalable architectures.
+ccflare is a load balancer proxy for Claude API accounts that can be deployed in various configurations, from simple local development to production-grade distributed systems. This document covers all deployment options, from single-instance setups to scalable architectures.
 
-> **Recent Updates**: Claudeflare now includes a Terminal User Interface (TUI) for interactive monitoring and management, alongside the web dashboard. The async database writer improves performance for high-throughput scenarios.
+> **Recent Updates**: ccflare now includes a Terminal User Interface (TUI) for interactive monitoring and management, alongside the web dashboard. The async database writer improves performance for high-throughput scenarios.
 
 ## Table of Contents
 
@@ -63,14 +63,14 @@ graph TB
 
 ```bash
 # Clone the repository
-git clone https://github.com/snipeship/claudeflare.git
-cd claudeflare
+git clone https://github.com/snipeship/ccflare.git
+cd ccflare
 
 # Install dependencies
 bun install
 
-# Start Claudeflare (TUI + Server combined)
-bun run claudeflare
+# Start ccflare (TUI + Server combined)
+bun run ccflare
 
 # Or start components separately:
 # Terminal UI only
@@ -97,7 +97,7 @@ export LOG_FORMAT=pretty  # Options: pretty, json
 export CF_STREAM_BODY_MAX_BYTES=262144  # 256KB default
 
 # Start with custom config
-bun run claudeflare
+bun run ccflare
 ```
 
 ## Production Deployment
@@ -118,7 +118,7 @@ bun run claudeflare
 
 ### Bun Binary Compilation
 
-Compile Claudeflare into a single executable for easy deployment:
+Compile ccflare into a single executable for easy deployment:
 
 ```bash
 # Build all components
@@ -126,7 +126,7 @@ bun run build  # Builds dashboard and TUI
 
 # Build the server binary
 cd apps/server
-bun build src/server.ts --compile --outfile dist/claudeflare-server
+bun build src/server.ts --compile --outfile dist/ccflare-server
 
 # Build the CLI binary
 cd ../cli
@@ -134,23 +134,23 @@ bun build src/cli.ts --compile --outfile dist/cli
 
 # Build the TUI binary (optional, for standalone TUI deployment)
 cd ../tui
-bun build src/main.ts --compile --outfile dist/claudeflare-tui
+bun build src/main.ts --compile --outfile dist/ccflare-tui
 
 # Copy binaries to deployment location
-cp apps/server/dist/claudeflare-server /opt/claudeflare/
-cp apps/cli/dist/cli /opt/claudeflare/claudeflare-cli
-cp apps/tui/dist/claudeflare-tui /opt/claudeflare/  # Optional
+cp apps/server/dist/ccflare-server /opt/ccflare/
+cp apps/cli/dist/cli /opt/ccflare/ccflare-cli
+cp apps/tui/dist/ccflare-tui /opt/ccflare/  # Optional
 ```
 
 #### Binary Deployment Structure
 
 ```
-/opt/claudeflare/
-├── claudeflare-server      # Main server binary
-├── claudeflare-cli         # CLI tool binary
-├── claudeflare-tui         # TUI binary (optional)
+/opt/ccflare/
+├── ccflare-server      # Main server binary
+├── ccflare-cli         # CLI tool binary
+├── ccflare-tui         # TUI binary (optional)
 ├── config/
-│   └── claudeflare.json    # Configuration
+│   └── ccflare.json    # Configuration
 └── data/
     ├── claude-accounts.db  # SQLite database
     └── logs/               # Log files
@@ -168,8 +168,8 @@ npm install -g pm2
 cat > ecosystem.config.js << 'EOF'
 module.exports = {
   apps: [{
-    name: 'claudeflare',
-    script: '/opt/claudeflare/claudeflare-server',
+    name: 'ccflare',
+    script: '/opt/ccflare/ccflare-server',
     instances: 1,
     exec_mode: 'fork',
     env: {
@@ -178,11 +178,11 @@ module.exports = {
       LOG_LEVEL: 'INFO',
       LOG_FORMAT: 'json',
       CF_STREAM_BODY_MAX_BYTES: 262144,
-      CLAUDEFLARE_CONFIG_PATH: '/opt/claudeflare/config/claudeflare.json'
+      ccflare_CONFIG_PATH: '/opt/ccflare/config/ccflare.json'
     },
-    error_file: '/opt/claudeflare/data/logs/error.log',
-    out_file: '/opt/claudeflare/data/logs/out.log',
-    log_file: '/opt/claudeflare/data/logs/combined.log',
+    error_file: '/opt/ccflare/data/logs/error.log',
+    out_file: '/opt/ccflare/data/logs/out.log',
+    log_file: '/opt/ccflare/data/logs/combined.log',
     time: true,
     autorestart: true,
     max_restarts: 10,
@@ -204,17 +204,17 @@ Create a systemd service file:
 
 ```bash
 # Create service file
-sudo cat > /etc/systemd/system/claudeflare.service << 'EOF'
+sudo cat > /etc/systemd/system/ccflare.service << 'EOF'
 [Unit]
-Description=Claudeflare Load Balancer
+Description=ccflare Load Balancer
 After=network.target
 
 [Service]
 Type=simple
-User=claudeflare
-Group=claudeflare
-WorkingDirectory=/opt/claudeflare
-ExecStart=/opt/claudeflare/claudeflare-server
+User=ccflare
+Group=ccflare
+WorkingDirectory=/opt/ccflare
+ExecStart=/opt/ccflare/ccflare-server
 Restart=always
 RestartSec=5
 
@@ -224,14 +224,14 @@ Environment="LB_STRATEGY=session"
 Environment="LOG_LEVEL=INFO"
 Environment="LOG_FORMAT=json"
 Environment="CF_STREAM_BODY_MAX_BYTES=262144"
-Environment="CLAUDEFLARE_CONFIG_PATH=/opt/claudeflare/config/claudeflare.json"
+Environment="ccflare_CONFIG_PATH=/opt/ccflare/config/ccflare.json"
 
 # Security
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/opt/claudeflare/data
+ReadWritePaths=/opt/ccflare/data
 
 # Resource limits
 LimitNOFILE=65536
@@ -242,14 +242,14 @@ WantedBy=multi-user.target
 EOF
 
 # Create user and directories
-sudo useradd -r -s /bin/false claudeflare
-sudo mkdir -p /opt/claudeflare/{config,data/logs}
-sudo chown -R claudeflare:claudeflare /opt/claudeflare
+sudo useradd -r -s /bin/false ccflare
+sudo mkdir -p /opt/ccflare/{config,data/logs}
+sudo chown -R ccflare:ccflare /opt/ccflare
 
 # Enable and start service
 sudo systemctl daemon-reload
-sudo systemctl enable claudeflare
-sudo systemctl start claudeflare
+sudo systemctl enable ccflare
+sudo systemctl start ccflare
 ```
 
 ## Docker Deployment
@@ -273,8 +273,8 @@ COPY tsconfig.json ./
 # Install dependencies and build
 RUN bun install --frozen-lockfile
 RUN bun run build
-RUN cd apps/server && bun build src/server.ts --compile --outfile dist/claudeflare-server
-RUN cd apps/cli && bun build src/cli.ts --compile --outfile dist/claudeflare-cli
+RUN cd apps/server && bun build src/server.ts --compile --outfile dist/ccflare-server
+RUN cd apps/cli && bun build src/cli.ts --compile --outfile dist/ccflare-cli
 
 # Runtime stage
 FROM debian:bookworm-slim
@@ -285,34 +285,34 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Create user
-RUN useradd -r -s /bin/false claudeflare
+RUN useradd -r -s /bin/false ccflare
 
 # Copy binaries
-COPY --from=builder /app/apps/server/dist/claudeflare-server /usr/local/bin/
-COPY --from=builder /app/apps/cli/dist/cli /usr/local/bin/claudeflare-cli
-COPY --from=builder /app/apps/tui/dist/claudeflare-tui /usr/local/bin/
-COPY --from=builder /app/packages/dashboard-web/dist /opt/claudeflare/dashboard
+COPY --from=builder /app/apps/server/dist/ccflare-server /usr/local/bin/
+COPY --from=builder /app/apps/cli/dist/cli /usr/local/bin/ccflare-cli
+COPY --from=builder /app/apps/tui/dist/ccflare-tui /usr/local/bin/
+COPY --from=builder /app/packages/dashboard-web/dist /opt/ccflare/dashboard
 
 # Set permissions
-RUN chmod +x /usr/local/bin/claudeflare-*
+RUN chmod +x /usr/local/bin/ccflare-*
 
 # Create data directories
-RUN mkdir -p /data /config && chown -R claudeflare:claudeflare /data /config
+RUN mkdir -p /data /config && chown -R ccflare:ccflare /data /config
 
-USER claudeflare
+USER ccflare
 
 # Environment
 ENV PORT=8080
-ENV CLAUDEFLARE_CONFIG_PATH=/config/claudeflare.json
+ENV ccflare_CONFIG_PATH=/config/ccflare.json
 
 EXPOSE 8080
 
 VOLUME ["/data", "/config"]
 
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD ["/usr/local/bin/claudeflare-server", "health"] || exit 1
+  CMD ["/usr/local/bin/ccflare-server", "health"] || exit 1
 
-ENTRYPOINT ["/usr/local/bin/claudeflare-server"]
+ENTRYPOINT ["/usr/local/bin/ccflare-server"]
 ```
 
 ### Example Docker Compose
@@ -321,9 +321,9 @@ ENTRYPOINT ["/usr/local/bin/claudeflare-server"]
 version: '3.8'
 
 services:
-  claudeflare:
+  ccflare:
     build: .
-    container_name: claudeflare
+    container_name: ccflare
     restart: unless-stopped
     ports:
       - "8080:8080"
@@ -343,12 +343,12 @@ services:
       retries: 3
       start_period: 40s
     networks:
-      - claudeflare-net
+      - ccflare-net
 
   # Optional: Reverse proxy
   nginx:
     image: nginx:alpine
-    container_name: claudeflare-nginx
+    container_name: ccflare-nginx
     restart: unless-stopped
     ports:
       - "80:80"
@@ -357,12 +357,12 @@ services:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./nginx/ssl:/etc/nginx/ssl:ro
     depends_on:
-      - claudeflare
+      - ccflare
     networks:
-      - claudeflare-net
+      - ccflare-net
 
 networks:
-  claudeflare-net:
+  ccflare-net:
     driver: bridge
 ```
 
@@ -370,16 +370,16 @@ networks:
 
 ```bash
 # Build the Docker image
-docker build -t claudeflare:latest .
+docker build -t ccflare:latest .
 
 # Run with Docker
 docker run -d \
-  --name claudeflare \
+  --name ccflare \
   -p 8080:8080 \
   -v $(pwd)/data:/data \
   -v $(pwd)/config:/config \
   -e LB_STRATEGY=session \
-  claudeflare:latest
+  ccflare:latest
 
 # Or use Docker Compose
 docker-compose up -d
@@ -429,25 +429,25 @@ const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
 ### Nginx Configuration
 
 ```nginx
-# /etc/nginx/sites-available/claudeflare
-upstream claudeflare_backend {
+# /etc/nginx/sites-available/ccflare
+upstream ccflare_backend {
     server 127.0.0.1:8080 max_fails=3 fail_timeout=30s;
     keepalive 32;
 }
 
 server {
     listen 80;
-    server_name claudeflare.yourdomain.com;
+    server_name ccflare.yourdomain.com;
     return 301 https://$server_name$request_uri;
 }
 
 server {
     listen 443 ssl http2;
-    server_name claudeflare.yourdomain.com;
+    server_name ccflare.yourdomain.com;
 
     # SSL configuration
-    ssl_certificate /etc/letsencrypt/live/claudeflare.yourdomain.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/claudeflare.yourdomain.com/privkey.pem;
+    ssl_certificate /etc/letsencrypt/live/ccflare.yourdomain.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/ccflare.yourdomain.com/privkey.pem;
     ssl_protocols TLSv1.2 TLSv1.3;
     ssl_ciphers HIGH:!aNULL:!MD5;
     ssl_prefer_server_ciphers on;
@@ -474,12 +474,12 @@ server {
 
     # Main proxy
     location / {
-        proxy_pass http://claudeflare_backend;
+        proxy_pass http://ccflare_backend;
     }
 
     # API endpoints
     location /v1/ {
-        proxy_pass http://claudeflare_backend;
+        proxy_pass http://ccflare_backend;
         
         # Increase limits for AI requests
         client_max_body_size 100M;
@@ -489,7 +489,7 @@ server {
 
     # WebSocket support for real-time updates
     location /ws {
-        proxy_pass http://claudeflare_backend;
+        proxy_pass http://ccflare_backend;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
@@ -498,7 +498,7 @@ server {
 
     # Static assets caching
     location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
-        proxy_pass http://claudeflare_backend;
+        proxy_pass http://ccflare_backend;
         expires 1y;
         add_header Cache-Control "public, immutable";
     }
@@ -508,7 +508,7 @@ server {
 ### Caddy Configuration
 
 ```caddyfile
-claudeflare.yourdomain.com {
+ccflare.yourdomain.com {
     # Automatic HTTPS
     tls your-email@example.com
 
@@ -566,10 +566,10 @@ claudeflare.yourdomain.com {
 ```mermaid
 graph TB
     subgraph "Logging Architecture"
-        APP[Claudeflare Server]
+        APP[ccflare Server]
         
         subgraph "Log Outputs"
-            FILE[File Logs<br/>/var/log/claudeflare/]
+            FILE[File Logs<br/>/var/log/ccflare/]
             STDOUT[Container Stdout]
             SYSLOG[Syslog]
         end
@@ -609,26 +609,26 @@ import { register, Counter, Histogram, Gauge } from 'prom-client';
 
 export const metrics = {
   requestsTotal: new Counter({
-    name: 'claudeflare_requests_total',
+    name: 'ccflare_requests_total',
     help: 'Total number of requests',
     labelNames: ['method', 'status', 'account']
   }),
   
   requestDuration: new Histogram({
-    name: 'claudeflare_request_duration_seconds',
+    name: 'ccflare_request_duration_seconds',
     help: 'Request duration in seconds',
     labelNames: ['method', 'status'],
     buckets: [0.1, 0.5, 1, 2, 5, 10]
   }),
   
   activeAccounts: new Gauge({
-    name: 'claudeflare_active_accounts',
+    name: 'ccflare_active_accounts',
     help: 'Number of active accounts',
     labelNames: ['tier']
   }),
   
   rateLimitedAccounts: new Gauge({
-    name: 'claudeflare_rate_limited_accounts',
+    name: 'ccflare_rate_limited_accounts',
     help: 'Number of rate limited accounts'
   })
 };
@@ -677,7 +677,7 @@ services:
     volumes:
       - ./promtail-config.yaml:/etc/promtail/config.yml
       - /var/log:/var/log:ro
-      - /opt/claudeflare/data/logs:/app/logs:ro
+      - /opt/ccflare/data/logs:/app/logs:ro
     command: -config.file=/etc/promtail/config.yml
 
 volumes:
@@ -692,8 +692,8 @@ volumes:
 
 ```bash
 # Increase file descriptor limits
-echo "claudeflare soft nofile 65536" >> /etc/security/limits.conf
-echo "claudeflare hard nofile 65536" >> /etc/security/limits.conf
+echo "ccflare soft nofile 65536" >> /etc/security/limits.conf
+echo "ccflare hard nofile 65536" >> /etc/security/limits.conf
 
 # TCP tuning for high throughput
 cat >> /etc/sysctl.conf << EOF
@@ -775,9 +775,9 @@ graph TB
     end
     
     subgraph "Application Instances"
-        APP1[Claudeflare-1<br/>Port 8081]
-        APP2[Claudeflare-2<br/>Port 8082]
-        APP3[Claudeflare-N<br/>Port 808N]
+        APP1[ccflare-1<br/>Port 8081]
+        APP2[ccflare-2<br/>Port 8082]
+        APP3[ccflare-N<br/>Port 808N]
     end
     
     subgraph "Shared Data Layer"
@@ -867,38 +867,38 @@ CREATE INDEX idx_accounts_rate_limit ON accounts(rate_limited_until);
 ### Kubernetes Deployment
 
 ```yaml
-# claudeflare-deployment.yaml
+# ccflare-deployment.yaml
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: claudeflare
+  name: ccflare
   labels:
-    app: claudeflare
+    app: ccflare
 spec:
   replicas: 3
   selector:
     matchLabels:
-      app: claudeflare
+      app: ccflare
   template:
     metadata:
       labels:
-        app: claudeflare
+        app: ccflare
     spec:
       containers:
-      - name: claudeflare
-        image: your-registry/claudeflare:latest
+      - name: ccflare
+        image: your-registry/ccflare:latest
         ports:
         - containerPort: 8080
         env:
         - name: DATABASE_URL
           valueFrom:
             secretKeyRef:
-              name: claudeflare-secrets
+              name: ccflare-secrets
               key: database-url
         - name: REDIS_URL
           valueFrom:
             secretKeyRef:
-              name: claudeflare-secrets
+              name: ccflare-secrets
               key: redis-url
         resources:
           requests:
@@ -923,10 +923,10 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: claudeflare
+  name: ccflare
 spec:
   selector:
-    app: claudeflare
+    app: ccflare
   ports:
   - port: 80
     targetPort: 8080
@@ -978,7 +978,7 @@ spec:
 
 ### Health Check Endpoint
 
-Claudeflare provides a health check endpoint for monitoring:
+ccflare provides a health check endpoint for monitoring:
 
 ```bash
 # Check health status
@@ -1061,29 +1061,29 @@ healthcheck:
 1. **Database Lock Errors**
    ```bash
    # Enable WAL mode
-   sqlite3 /opt/claudeflare/data/claude-accounts.db "PRAGMA journal_mode=WAL;"
+   sqlite3 /opt/ccflare/data/claude-accounts.db "PRAGMA journal_mode=WAL;"
    ```
 
 2. **High Memory Usage**
    ```bash
    # Check for memory leaks
-   node --inspect=0.0.0.0:9229 /opt/claudeflare/claudeflare-server
+   node --inspect=0.0.0.0:9229 /opt/ccflare/ccflare-server
    ```
 
 3. **Connection Refused**
    ```bash
    # Check if service is running
-   systemctl status claudeflare
+   systemctl status ccflare
    # Check logs
-   journalctl -u claudeflare -f
+   journalctl -u ccflare -f
    ```
 
 4. **Rate Limit Issues**
    ```bash
    # Check account status
-   /opt/claudeflare/claudeflare-cli list
+   /opt/ccflare/ccflare-cli list
    # Reset rate limits
-   /opt/claudeflare/claudeflare-cli reset-stats
+   /opt/ccflare/ccflare-cli reset-stats
    ```
 
 ## Maintenance
@@ -1092,17 +1092,17 @@ healthcheck:
 
 ```bash
 # Daily: Check logs for errors
-grep ERROR /opt/claudeflare/data/logs/*.log | tail -50
+grep ERROR /opt/ccflare/data/logs/*.log | tail -50
 
 # Weekly: Database maintenance
-sqlite3 /opt/claudeflare/data/claude-accounts.db "VACUUM;"
-sqlite3 /opt/claudeflare/data/claude-accounts.db "ANALYZE;"
+sqlite3 /opt/ccflare/data/claude-accounts.db "VACUUM;"
+sqlite3 /opt/ccflare/data/claude-accounts.db "ANALYZE;"
 
 # Monthly: Clean old logs
-find /opt/claudeflare/data/logs -name "*.log" -mtime +30 -delete
+find /opt/ccflare/data/logs -name "*.log" -mtime +30 -delete
 
 # Quarterly: Update dependencies
-cd /opt/claudeflare
+cd /opt/ccflare
 bun update
 ```
 
@@ -1112,21 +1112,21 @@ bun update
 #!/bin/bash
 # backup.sh - Run daily via cron
 
-BACKUP_DIR="/backup/claudeflare/$(date +%Y%m%d)"
+BACKUP_DIR="/backup/ccflare/$(date +%Y%m%d)"
 mkdir -p "$BACKUP_DIR"
 
 # Backup database
-sqlite3 /opt/claudeflare/data/claude-accounts.db ".backup $BACKUP_DIR/claude-accounts.db"
+sqlite3 /opt/ccflare/data/claude-accounts.db ".backup $BACKUP_DIR/claude-accounts.db"
 
 # Backup configuration
-cp -r /opt/claudeflare/config "$BACKUP_DIR/"
+cp -r /opt/ccflare/config "$BACKUP_DIR/"
 
 # Compress
 tar -czf "$BACKUP_DIR.tar.gz" "$BACKUP_DIR"
 rm -rf "$BACKUP_DIR"
 
 # Keep only last 30 days
-find /backup/claudeflare -name "*.tar.gz" -mtime +30 -delete
+find /backup/ccflare -name "*.tar.gz" -mtime +30 -delete
 ```
 
 ## Environment Variables Reference
@@ -1150,11 +1150,11 @@ find /backup/claudeflare -name "*.tar.gz" -mtime +30 -delete
 | `RETRY_ATTEMPTS` | 3 | Number of retry attempts for failed requests |
 | `RETRY_DELAY_MS` | 1000 | Initial delay between retries in milliseconds |
 | `RETRY_BACKOFF` | 2 | Backoff multiplier for exponential retry delays |
-| `CLAUDEFLARE_CONFIG_PATH` | Platform-specific | Path to configuration file |
+| `ccflare_CONFIG_PATH` | Platform-specific | Path to configuration file |
 
 ### Configuration File
 
-Claudeflare also supports a JSON configuration file that takes precedence over environment variables:
+ccflare also supports a JSON configuration file that takes precedence over environment variables:
 
 ```json
 {
@@ -1170,12 +1170,12 @@ Claudeflare also supports a JSON configuration file that takes precedence over e
 ```
 
 The configuration file is located at:
-- **Linux/macOS**: `~/.config/claudeflare/config.json`
-- **Windows**: `%APPDATA%\claudeflare\config.json`
+- **Linux/macOS**: `~/.config/ccflare/config.json`
+- **Windows**: `%APPDATA%\ccflare\config.json`
 
 ## Conclusion
 
-Claudeflare is designed to be flexible and scalable, supporting everything from simple local deployments to complex distributed architectures. Choose the deployment option that best fits your needs and scale as your requirements grow.
+ccflare is designed to be flexible and scalable, supporting everything from simple local deployments to complex distributed architectures. Choose the deployment option that best fits your needs and scale as your requirements grow.
 
 ### Key Features Summary
 
@@ -1191,24 +1191,24 @@ Claudeflare is designed to be flexible and scalable, supporting everything from 
 - [Configuration Guide](./configuration.md)
 - [Load Balancing Strategies](./load-balancing.md)
 - [API Reference](./api-http.md)
-- [GitHub Repository](https://github.com/snipeship/claudeflare)
+- [GitHub Repository](https://github.com/snipeship/ccflare)
 
 ## Terminal User Interface (TUI)
 
-Claudeflare includes a powerful Terminal User Interface for interactive monitoring and management.
+ccflare includes a powerful Terminal User Interface for interactive monitoring and management.
 
 ### Starting the TUI
 
 ```bash
 # Start TUI with server (recommended)
-bun run claudeflare
+bun run ccflare
 
 # Start TUI separately (connects to existing server)
 bun run tui
 
 # Build TUI as standalone binary
 cd apps/tui
-bun build src/main.ts --compile --outfile dist/claudeflare-tui
+bun build src/main.ts --compile --outfile dist/ccflare-tui
 ```
 
 ### TUI Features
@@ -1247,11 +1247,11 @@ bun build src/main.ts --compile --outfile dist/claudeflare-tui
 
 ### Remote TUI Connection
 
-The TUI can connect to a remote Claudeflare server:
+The TUI can connect to a remote ccflare server:
 
 ```bash
 # Set API URL for remote connection
-export CLAUDEFLARE_API_URL=https://claudeflare.example.com
+export ccflare_API_URL=https://ccflare.example.com
 bun run tui
 ```
 

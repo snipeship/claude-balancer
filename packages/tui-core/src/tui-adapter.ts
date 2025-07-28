@@ -1,4 +1,4 @@
-import type { PromptAdapter } from "@claudeflare/cli-commands";
+import type { PromptAdapter } from "@ccflare/cli-commands";
 
 /**
  * Special error thrown when TUI needs to collect authorization code

@@ -1,9 +1,9 @@
 node_modules/
 .env
 .env.local
-claudeflare.db
-claudeflare.db-wal
-claudeflare.db-shm
+ccflare.db
+ccflare.db-wal
+ccflare.db-shm
 dist/
 .DS_Store
 *.log

@@ -1,5 +1,5 @@
 import type { Database } from "bun:sqlite";
-import type { Config } from "@claudeflare/config";
+import type { Config } from "@ccflare/config";
 import type { HealthResponse } from "../types";
 
 /**

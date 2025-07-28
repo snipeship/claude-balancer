@@ -1,14 +1,14 @@
-// Re-export provider-related types and functions from @claudeflare/providers
+// Re-export provider-related types and functions from @ccflare/providers
 export type {
 	Provider,
 	RateLimitInfo,
 	TokenRefreshResult,
-} from "@claudeflare/providers";
+} from "@ccflare/providers";
 export {
 	getProvider,
 	listProviders,
 	registerProvider,
-} from "@claudeflare/providers";
+} from "@ccflare/providers";
 export {
 	getUsageWorker,
 	handleProxy,

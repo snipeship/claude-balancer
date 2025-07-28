@@ -1,4 +1,4 @@
-import type { RequestSummary } from "@claudeflare/tui-core";
+import type { RequestSummary } from "@ccflare/tui-core";
 import { Box, Text } from "ink";
 
 interface TokenUsageDisplayProps {

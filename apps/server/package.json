@@ -1,23 +1,23 @@
 {
-	"name": "@claudeflare/server",
+	"name": "@ccflare/server",
 	"version": "0.1.0",
 	"type": "module",
 	"scripts": {
 		"dev": "bun run --hot src/server.ts",
 		"start": "bun run src/server.ts",
-		"build": "bun build src/server.ts --compile --outfile dist/claudeflare-server",
+		"build": "bun build src/server.ts --compile --outfile dist/ccflare-server",
 		"typecheck": "bunx tsc --noEmit"
 	},
 	"dependencies": {
-		"@claudeflare/core": "workspace:*",
-		"@claudeflare/core-di": "workspace:*",
-		"@claudeflare/database": "workspace:*",
-		"@claudeflare/config": "workspace:*",
-		"@claudeflare/logger": "workspace:*",
-		"@claudeflare/load-balancer": "workspace:*",
-		"@claudeflare/proxy": "workspace:*",
-		"@claudeflare/dashboard-web": "workspace:*",
-		"@claudeflare/http-api": "workspace:*",
-		"@claudeflare/types": "workspace:*"
+		"@ccflare/core": "workspace:*",
+		"@ccflare/core-di": "workspace:*",
+		"@ccflare/database": "workspace:*",
+		"@ccflare/config": "workspace:*",
+		"@ccflare/logger": "workspace:*",
+		"@ccflare/load-balancer": "workspace:*",
+		"@ccflare/proxy": "workspace:*",
+		"@ccflare/dashboard-web": "workspace:*",
+		"@ccflare/http-api": "workspace:*",
+		"@ccflare/types": "workspace:*"
 	}
 }

@@ -1,23 +1,23 @@
 {
-	"name": "claudeflare",
+	"name": "ccflare",
 	"version": "1.0.0",
-	"description": "TUI for Claudeflare load balancer",
+	"description": "TUI for ccflare load balancer",
 	"bin": {
-		"claudeflare": "./dist/claudeflare"
+		"ccflare": "./dist/ccflare"
 	},
 	"type": "module",
 	"scripts": {
 		"dev": "bun run src/main.ts",
-		"build": "bun build src/main.ts --compile --outfile dist/claudeflare --target=bun",
+		"build": "bun build src/main.ts --compile --outfile dist/ccflare --target=bun",
 		"prepublishOnly": "bun run build",
-		"postpublish": "chmod +x dist/claudeflare"
+		"postpublish": "chmod +x dist/ccflare"
 	},
 	"dependencies": {
-		"@claudeflare/tui-core": "workspace:*",
-		"@claudeflare/database": "workspace:*",
-		"@claudeflare/core-di": "workspace:*",
-		"@claudeflare/config": "workspace:*",
-		"@claudeflare/logger": "workspace:*",
+		"@ccflare/tui-core": "workspace:*",
+		"@ccflare/database": "workspace:*",
+		"@ccflare/core-di": "workspace:*",
+		"@ccflare/config": "workspace:*",
+		"@ccflare/logger": "workspace:*",
 		"ink": "^6.0.0",
 		"ink-select-input": "^6.0.0",
 		"ink-spinner": "^5.0.0",
@@ -33,7 +33,7 @@
 		"dist"
 	],
 	"keywords": [
-		"claudeflare",
+		"ccflare",
 		"load-balancer",
 		"tui",
 		"cli"

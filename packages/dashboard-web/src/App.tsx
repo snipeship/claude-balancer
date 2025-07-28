@@ -64,7 +64,7 @@ export function App() {
 									</h1>
 									<p className="text-muted-foreground mt-2">
 										{activeTab === "overview" &&
-											"Monitor your claudeflare performance and usage"}
+											"Monitor your ccflare performance and usage"}
 										{activeTab === "analytics" &&
 											"Deep dive into your usage patterns and trends"}
 										{activeTab === "requests" &&

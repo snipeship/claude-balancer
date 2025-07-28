@@ -5,7 +5,7 @@ import {
 	DEFAULT_STRATEGY,
 	isValidStrategy,
 	type StrategyName,
-} from "@claudeflare/core";
+} from "@ccflare/core";
 import { resolveConfigPath } from "./paths";
 
 export interface RuntimeConfig {
@@ -181,6 +181,6 @@ export class Config extends EventEmitter {
 }
 
 // Re-export types
-export type { StrategyName } from "@claudeflare/core";
+export type { StrategyName } from "@ccflare/core";
 export { resolveConfigPath } from "./paths";
 export { getPlatformConfigDir } from "./paths-common";

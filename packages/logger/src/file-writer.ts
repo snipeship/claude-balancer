@@ -1,8 +1,8 @@
 import { createWriteStream, existsSync, mkdirSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { type Disposable, registerDisposable } from "@claudeflare/core";
-import type { LogEvent } from "@claudeflare/types";
+import { type Disposable, registerDisposable } from "@ccflare/core";
+import type { LogEvent } from "@ccflare/types";
 
 export class LogFileWriter implements Disposable {
 	private logDir: string;
@@ -12,7 +12,7 @@ export class LogFileWriter implements Disposable {
 
 	constructor() {
 		// Create log directory in tmp folder
-		this.logDir = join(tmpdir(), "claudeflare-logs");
+		this.logDir = join(tmpdir(), "ccflare-logs");
 		if (!existsSync(this.logDir)) {
 			mkdirSync(this.logDir, { recursive: true });
 		}

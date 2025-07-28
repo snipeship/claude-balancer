@@ -1,5 +1,5 @@
-import type { Disposable } from "@claudeflare/core";
-import { Logger } from "@claudeflare/logger";
+import type { Disposable } from "@ccflare/core";
+import { Logger } from "@ccflare/logger";
 
 const logger = new Logger("async-db-writer");
 

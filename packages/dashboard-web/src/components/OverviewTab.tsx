@@ -1,4 +1,4 @@
-import type { AnalyticsResponse } from "@claudeflare/http-api";
+import type { AnalyticsResponse } from "@ccflare/http-api";
 import { format } from "date-fns";
 import {
 	Activity,
@@ -40,7 +40,7 @@ import {
 } from "./ui/card";
 import { Skeleton } from "./ui/skeleton";
 
-// Claudeflare-inspired color palette
+// ccflare-inspired color palette
 const COLORS = {
 	primary: "#f38020",
 	success: "#10b981",

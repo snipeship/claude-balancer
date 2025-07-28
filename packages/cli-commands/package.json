@@ -1,5 +1,5 @@
 {
-	"name": "@claudeflare/cli-commands",
+	"name": "@ccflare/cli-commands",
 	"version": "0.1.0",
 	"type": "module",
 	"main": "./src/index.ts",
@@ -10,10 +10,10 @@
 		"typecheck": "bunx tsc --noEmit"
 	},
 	"dependencies": {
-		"@claudeflare/core": "workspace:*",
-		"@claudeflare/core-di": "workspace:*",
-		"@claudeflare/database": "workspace:*",
-		"@claudeflare/config": "workspace:*",
-		"@claudeflare/providers": "workspace:*"
+		"@ccflare/core": "workspace:*",
+		"@ccflare/core-di": "workspace:*",
+		"@ccflare/database": "workspace:*",
+		"@ccflare/config": "workspace:*",
+		"@ccflare/providers": "workspace:*"
 	}
 }

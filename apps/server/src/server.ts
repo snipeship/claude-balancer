@@ -1,26 +1,26 @@
 import { dirname } from "node:path";
-import { Config } from "@claudeflare/config";
-import type { LoadBalancingStrategy } from "@claudeflare/core";
+import { Config } from "@ccflare/config";
+import type { LoadBalancingStrategy } from "@ccflare/core";
 import {
 	DEFAULT_STRATEGY,
 	registerDisposable,
 	setPricingLogger,
 	shutdown,
-} from "@claudeflare/core";
-import { container, SERVICE_KEYS } from "@claudeflare/core-di";
+} from "@ccflare/core";
+import { container, SERVICE_KEYS } from "@ccflare/core-di";
 // Import React dashboard assets
-import dashboardManifest from "@claudeflare/dashboard-web/dist/manifest.json";
-import { AsyncDbWriter, DatabaseFactory } from "@claudeflare/database";
-import { APIRouter } from "@claudeflare/http-api";
-import { SessionStrategy } from "@claudeflare/load-balancer";
-import { Logger } from "@claudeflare/logger";
-import { getProvider } from "@claudeflare/providers";
+import dashboardManifest from "@ccflare/dashboard-web/dist/manifest.json";
+import { AsyncDbWriter, DatabaseFactory } from "@ccflare/database";
+import { APIRouter } from "@ccflare/http-api";
+import { SessionStrategy } from "@ccflare/load-balancer";
+import { Logger } from "@ccflare/logger";
+import { getProvider } from "@ccflare/providers";
 import {
 	getUsageWorker,
 	handleProxy,
 	type ProxyContext,
 	terminateUsageWorker,
-} from "@claudeflare/proxy";
+} from "@ccflare/proxy";
 import { serve } from "bun";
 
 // Initialize DI container
@@ -48,7 +48,7 @@ setPricingLogger(pricingLogger);
 const apiRouter = new APIRouter({ db, config, dbOps });
 const log = container.resolve<Logger>(SERVICE_KEYS.Logger);
 
-log.info("Starting Claudeflare server...");
+log.info("Starting ccflare server...");
 log.info(`Port: ${runtime.port}`);
 log.info(`Session duration: ${runtime.sessionDurationMs}ms`);
 
@@ -119,7 +119,7 @@ const server = serve({
 			let dashboardPath: string;
 			try {
 				dashboardPath = Bun.resolveSync(
-					"@claudeflare/dashboard-web/dist/index.html",
+					"@ccflare/dashboard-web/dist/index.html",
 					dirname(import.meta.path),
 				);
 			} catch {
@@ -144,7 +144,7 @@ const server = serve({
 				let assetPath: string;
 				try {
 					assetPath = Bun.resolveSync(
-						`@claudeflare/dashboard-web/dist${url.pathname}`,
+						`@ccflare/dashboard-web/dist${url.pathname}`,
 						dirname(import.meta.path),
 					);
 				} catch {
@@ -181,7 +181,7 @@ const server = serve({
 	},
 });
 
-console.log(`🚀 Claudeflare server running on http://localhost:${server.port}`);
+console.log(`🚀 ccflare server running on http://localhost:${server.port}`);
 console.log(`📊 Dashboard: http://localhost:${server.port}/dashboard`);
 console.log(`🔍 Health check: http://localhost:${server.port}/health`);
 console.log(

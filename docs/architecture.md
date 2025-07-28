@@ -1,8 +1,8 @@
-# Claudeflare Architecture Documentation
+# ccflare Architecture Documentation
 
 ## Overview
 
-Claudeflare is a sophisticated load balancer proxy system designed to distribute requests across multiple OAuth accounts for AI services (currently focused on Anthropic's Claude API). It prevents rate limiting by intelligently routing requests through different authenticated accounts using various load balancing strategies.
+ccflare is a sophisticated load balancer proxy system designed to distribute requests across multiple OAuth accounts for AI services (currently focused on Anthropic's Claude API). It prevents rate limiting by intelligently routing requests through different authenticated accounts using various load balancing strategies.
 
 The system is built with a modular, microservices-inspired architecture using TypeScript and Bun runtime, emphasizing separation of concerns, extensibility, and real-time monitoring capabilities. Recent enhancements include asynchronous database operations, streaming response capture for analytics, and advanced request filtering.
 
@@ -17,7 +17,7 @@ graph LR
         UI4[API Clients]
     end
     
-    subgraph "Claudeflare Core"
+    subgraph "ccflare Core"
         LB[Load Balancer]
         PROXY[Proxy Engine]
         AUTH[OAuth Manager]
@@ -65,7 +65,7 @@ graph TB
     end
 
     %% API Gateway Layer
-    subgraph "Claudeflare Server"
+    subgraph "ccflare Server"
         SERVER[HTTP Server<br/>apps/server]
         
         subgraph "Request Processing"
@@ -131,7 +131,7 @@ graph TB
 The project is organized as a Bun monorepo with clear separation of concerns:
 
 ```
-claudeflare/
+ccflare/
 ├── apps/                    # Deployable applications
 │   ├── cli/                # Command-line interface
 │   ├── lander/            # Static landing page
@@ -670,7 +670,7 @@ The main HTTP server application that:
 
 ### 2. CLI App (`apps/cli`)
 
-Command-line interface for managing Claudeflare:
+Command-line interface for managing ccflare:
 - Account management (add, remove, list)
 - Statistics viewing
 - Configuration updates
@@ -770,7 +770,7 @@ stateDiagram-v2
 
 ### Streaming Architecture
 
-Claudeflare implements sophisticated streaming support for handling large language model responses:
+ccflare implements sophisticated streaming support for handling large language model responses:
 
 ```mermaid
 graph TB
@@ -922,7 +922,7 @@ The architecture supports:
 ```mermaid
 graph TB
     subgraph "Local Machine"
-        SERVER[Claudeflare Server<br/>Port 8080]
+        SERVER[ccflare Server<br/>Port 8080]
         DB[(SQLite DB)]
         LOGS[Log Files]
         CONFIG[Config Files]
@@ -949,9 +949,9 @@ graph TB
     end
     
     subgraph "Application Tier"
-        APP1[Claudeflare Instance 1]
-        APP2[Claudeflare Instance 2]
-        APP3[Claudeflare Instance N]
+        APP1[ccflare Instance 1]
+        APP2[ccflare Instance 2]
+        APP3[ccflare Instance N]
     end
     
     subgraph "Data Tier"

@@ -1,5 +1,5 @@
-import type { Stats } from "@claudeflare/tui-core";
-import * as tuiCore from "@claudeflare/tui-core";
+import type { Stats } from "@ccflare/tui-core";
+import * as tuiCore from "@ccflare/tui-core";
 import { Box, Text, useInput } from "ink";
 import { useCallback, useEffect, useState } from "react";
 

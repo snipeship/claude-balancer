@@ -7,7 +7,7 @@ import {
 	type Disposable,
 	type StrategyStore,
 	toAccount,
-} from "@claudeflare/core";
+} from "@ccflare/core";
 import { ensureSchema, runMigrations } from "./migrations";
 import { resolveDbPath } from "./paths";
 

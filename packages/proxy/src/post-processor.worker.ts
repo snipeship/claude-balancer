@@ -1,8 +1,8 @@
 declare var self: Worker;
 
-import { estimateCostUSD, NO_ACCOUNT_ID } from "@claudeflare/core";
-import { AsyncDbWriter, DatabaseOperations } from "@claudeflare/database";
-import { Logger } from "@claudeflare/logger";
+import { estimateCostUSD, NO_ACCOUNT_ID } from "@ccflare/core";
+import { AsyncDbWriter, DatabaseOperations } from "@ccflare/database";
+import { Logger } from "@ccflare/logger";
 import { combineChunks } from "./stream-tee";
 import type {
 	ChunkMessage,

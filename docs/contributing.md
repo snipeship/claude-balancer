@@ -1,6 +1,6 @@
-# Contributing to Claudeflare
+# Contributing to ccflare
 
-Welcome to Claudeflare! We're thrilled that you're interested in contributing to our Claude load balancer project. This document provides guidelines and instructions for contributing to the project.
+Welcome to ccflare! We're thrilled that you're interested in contributing to our Claude load balancer project. This document provides guidelines and instructions for contributing to the project.
 
 ## Table of Contents
 
@@ -18,7 +18,7 @@ Welcome to Claudeflare! We're thrilled that you're interested in contributing to
 
 ## Welcome & Code of Conduct
 
-First off, thank you for considering contributing to Claudeflare! We welcome contributions from everyone, regardless of their background or experience level.
+First off, thank you for considering contributing to ccflare! We welcome contributions from everyone, regardless of their background or experience level.
 
 ### Our Pledge
 
@@ -64,13 +64,13 @@ Before you begin, ensure you have the following installed:
 
 2. **Clone your fork**:
    ```bash
-   git clone https://github.com/YOUR_USERNAME/claudeflare.git
-   cd claudeflare
+   git clone https://github.com/YOUR_USERNAME/ccflare.git
+   cd ccflare
    ```
 
 3. **Add the upstream remote**:
    ```bash
-   git remote add upstream https://github.com/ORIGINAL_OWNER/claudeflare.git
+   git remote add upstream https://github.com/ORIGINAL_OWNER/ccflare.git
    ```
 
 4. **Install dependencies**:
@@ -151,10 +151,10 @@ bun run format
 
 ## Project Structure
 
-Claudeflare is organized as a Bun monorepo with clear separation of concerns:
+ccflare is organized as a Bun monorepo with clear separation of concerns:
 
 ```
-claudeflare/
+ccflare/
 ├── apps/                    # Deployable applications
 │   ├── cli/                # Command-line interface
 │   ├── lander/            # Static landing page
@@ -189,7 +189,7 @@ claudeflare/
 ### Package Naming Convention
 
 - Apps: Simple names (e.g., `server`, `cli`, `tui`)
-- Packages: Prefixed with `@claudeflare/` (e.g., `@claudeflare/core`, `@claudeflare/database`)
+- Packages: Prefixed with `@ccflare/` (e.g., `@ccflare/core`, `@ccflare/database`)
 
 ## Coding Standards
 
@@ -284,7 +284,7 @@ bun run lint
 
 1. **Import Order** (automatically organized by Biome):
    - External packages
-   - Internal packages (`@claudeflare/*`)
+   - Internal packages (`@ccflare/*`)
    - Relative imports
    - Type imports
 
@@ -295,10 +295,10 @@ bun run lint
 
    ```typescript
    // Good
-   import { Database } from '@claudeflare/database';
-   import { LoadBalancer } from '@claudeflare/load-balancer';
+   import { Database } from '@ccflare/database';
+   import { LoadBalancer } from '@ccflare/load-balancer';
    import { formatDate } from './utils';
-   import type { Account } from '@claudeflare/types';
+   import type { Account } from '@ccflare/types';
    
    // Bad
    import { Database } from '../../../packages/database/src';
@@ -724,7 +724,7 @@ bun run tui
 # or
 bun run dev
 # or (builds first, then runs)
-bun run claudeflare
+bun run ccflare
 
 # Build the TUI
 bun run build:tui
@@ -746,7 +746,7 @@ bun run build:lander
 
 1. **TypeScript errors**: Run `bun run typecheck` to identify issues
 2. **Formatting issues**: Run `bun run format` to auto-fix
-3. **Import errors**: Ensure you're using workspace imports (`@claudeflare/*`) for cross-package dependencies
+3. **Import errors**: Ensure you're using workspace imports (`@ccflare/*`) for cross-package dependencies
 4. **Database issues**: The SQLite database is created automatically in the data directory
 
-Thank you for contributing to Claudeflare! Your efforts help make Claude AI more accessible to everyone.
+Thank you for contributing to ccflare! Your efforts help make Claude AI more accessible to everyone.

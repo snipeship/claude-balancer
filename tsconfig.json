@@ -16,7 +16,7 @@
 		"jsx": "react-jsx",
 		"baseUrl": ".",
 		"paths": {
-			"@claudeflare/*": ["packages/*/src"]
+			"@ccflare/*": ["packages/*/src"]
 		}
 	},
 	"include": ["packages/*/src/**/*", "apps/*/src/**/*"]
