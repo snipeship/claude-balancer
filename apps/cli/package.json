@@ -1,9 +1,9 @@
 {
-	"name": "@claudeflare/cli",
+	"name": "@ccflare/cli",
 	"version": "0.1.0",
 	"type": "module",
 	"bin": {
-		"claudeflare": "./dist/cli"
+		"ccflare": "./dist/cli"
 	},
 	"scripts": {
 		"dev": "bun run src/cli.ts",
@@ -11,9 +11,9 @@
 		"typecheck": "bunx tsc --noEmit"
 	},
 	"dependencies": {
-		"@claudeflare/core": "workspace:*",
-		"@claudeflare/database": "workspace:*",
-		"@claudeflare/config": "workspace:*",
-		"@claudeflare/cli-commands": "workspace:*"
+		"@ccflare/core": "workspace:*",
+		"@ccflare/database": "workspace:*",
+		"@ccflare/config": "workspace:*",
+		"@ccflare/cli-commands": "workspace:*"
 	}
 }

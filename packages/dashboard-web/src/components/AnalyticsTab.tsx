@@ -1,4 +1,4 @@
-import type { AnalyticsResponse } from "@claudeflare/http-api";
+import type { AnalyticsResponse } from "@ccflare/http-api";
 import { format } from "date-fns";
 import { CalendarDays, Filter, RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";

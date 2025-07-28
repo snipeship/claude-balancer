@@ -1,4 +1,4 @@
-# Load Balancing in Claudeflare
+# Load Balancing in ccflare
 
 ## Table of Contents
 1. [Overview](#overview)
@@ -9,7 +9,7 @@
 
 ## Overview
 
-Claudeflare implements a session-based load balancing system to distribute requests across multiple Claude OAuth accounts, avoiding rate limits and ensuring high availability. The system maintains 5-hour sessions with individual accounts to minimize rate limit issues.
+ccflare implements a session-based load balancing system to distribute requests across multiple Claude OAuth accounts, avoiding rate limits and ensuring high availability. The system maintains 5-hour sessions with individual accounts to minimize rate limit issues.
 
 ### Key Features
 - **Account Health Monitoring**: Automatically filters out rate-limited or paused accounts
@@ -66,7 +66,7 @@ PORT=8080
 
 ### Configuration File
 
-Create `~/.claudeflare/config.json`:
+Create `~/.ccflare/config.json`:
 
 ```json
 {

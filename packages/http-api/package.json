@@ -1,5 +1,5 @@
 {
-	"name": "@claudeflare/http-api",
+	"name": "@ccflare/http-api",
 	"version": "0.1.0",
 	"type": "module",
 	"main": "./src/index.ts",
@@ -10,9 +10,9 @@
 		"typecheck": "bunx tsc --noEmit"
 	},
 	"dependencies": {
-		"@claudeflare/core": "workspace:*",
-		"@claudeflare/database": "workspace:*",
-		"@claudeflare/config": "workspace:*",
-		"@claudeflare/types": "workspace:*"
+		"@ccflare/core": "workspace:*",
+		"@ccflare/database": "workspace:*",
+		"@ccflare/config": "workspace:*",
+		"@ccflare/types": "workspace:*"
 	}
 }

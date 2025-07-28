@@ -1,4 +1,4 @@
-import { logFileWriter } from "@claudeflare/logger";
+import { logFileWriter } from "@ccflare/logger";
 
 /**
  * Create a logs history handler to fetch past logs

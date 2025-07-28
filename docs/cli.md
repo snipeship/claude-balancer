@@ -1,6 +1,6 @@
-# Claudeflare CLI Documentation
+# ccflare CLI Documentation
 
-The Claudeflare CLI provides a command-line interface for managing OAuth accounts, monitoring usage statistics, and controlling the load balancer.
+The ccflare CLI provides a command-line interface for managing OAuth accounts, monitoring usage statistics, and controlling the load balancer.
 
 ## Table of Contents
 
@@ -26,8 +26,8 @@ The Claudeflare CLI provides a command-line interface for managing OAuth account
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/snipe-code/claudeflare.git
-cd claudeflare
+git clone https://github.com/snipe-code/ccflare.git
+cd ccflare
 ```
 
 2. Install dependencies:
@@ -71,7 +71,7 @@ bun cli
 ### Help Output Format
 
 ```
-Usage: claudeflare-cli <command> [options]
+Usage: ccflare-cli <command> [options]
 
 Commands:
   add <name> [options]      Add a new account using OAuth
@@ -291,26 +291,26 @@ bun cli clear-history && bun cli reset-stats
 
 ### Configuration File Location
 
-Claudeflare stores its configuration in platform-specific directories:
+ccflare stores its configuration in platform-specific directories:
 
 #### macOS/Linux
 ```
-~/.config/claudeflare/claudeflare.json
+~/.config/ccflare/ccflare.json
 ```
 
 Or if `XDG_CONFIG_HOME` is set:
 ```
-$XDG_CONFIG_HOME/claudeflare/claudeflare.json
+$XDG_CONFIG_HOME/ccflare/ccflare.json
 ```
 
 #### Windows
 ```
-%LOCALAPPDATA%\claudeflare\claudeflare.json
+%LOCALAPPDATA%\ccflare\ccflare.json
 ```
 
 Or fallback to:
 ```
-%APPDATA%\claudeflare\claudeflare.json
+%APPDATA%\ccflare\ccflare.json
 ```
 
 ### Configuration Structure
@@ -330,8 +330,8 @@ Or fallback to:
 ### Database Location
 
 The SQLite database follows the same directory structure:
-- **macOS/Linux**: `~/.config/claudeflare/claudeflare.db`
-- **Windows**: `%LOCALAPPDATA%\claudeflare\claudeflare.db`
+- **macOS/Linux**: `~/.config/ccflare/ccflare.db`
+- **Windows**: `%LOCALAPPDATA%\ccflare\ccflare.db`
 
 ## Environment Variables
 
@@ -339,8 +339,8 @@ The SQLite database follows the same directory structure:
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `CLAUDEFLARE_CONFIG_PATH` | Override config file location | Platform default |
-| `CLAUDEFLARE_DB_PATH` | Override database location | Platform default |
+| `ccflare_CONFIG_PATH` | Override config file location | Platform default |
+| `ccflare_DB_PATH` | Override database location | Platform default |
 | `PORT` | Server port | 8080 |
 | `CLIENT_ID` | OAuth client ID | 9d1c250a-e61b-44d9-88ed-5944d1962f5e |
 
@@ -370,7 +370,7 @@ The SQLite database follows the same directory structure:
 |----------|-------------|---------|
 | `LOG_LEVEL` | Log verbosity (DEBUG/INFO/WARN/ERROR) | INFO |
 | `LOG_FORMAT` | Output format (pretty/json) | pretty |
-| `CLAUDEFLARE_DEBUG` | Enable debug mode (1/0) - enables console output | 0 |
+| `ccflare_DEBUG` | Enable debug mode (1/0) - enables console output | 0 |
 
 ### Pricing and Features
 
@@ -417,12 +417,12 @@ The SQLite database follows the same directory structure:
 **Problem**: "Database is locked" or corruption errors
 
 **Solutions**:
-1. Stop all Claudeflare processes
+1. Stop all ccflare processes
 2. Check file permissions on database
 3. Backup and recreate if corrupted:
    ```bash
-   cp ~/.config/claudeflare/claudeflare.db ~/.config/claudeflare/claudeflare.db.backup
-   rm ~/.config/claudeflare/claudeflare.db
+   cp ~/.config/ccflare/ccflare.db ~/.config/ccflare/ccflare.db.backup
+   rm ~/.config/ccflare/ccflare.db
    ```
 
 ### Debug Mode
@@ -431,7 +431,7 @@ Enable detailed logging for troubleshooting:
 
 ```bash
 # Enable debug logging
-export CLAUDEFLARE_DEBUG=1
+export ccflare_DEBUG=1
 export LOG_LEVEL=DEBUG
 
 # Run with verbose output

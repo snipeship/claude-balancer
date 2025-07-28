@@ -3,7 +3,7 @@
  */
 export function getHelpText(): string {
 	return `
-Usage: claudeflare-cli <command> [options]
+Usage: ccflare-cli <command> [options]
 
 Commands:
   add <name> [--mode <max|console>] [--tier <1|5|20>]
@@ -34,10 +34,10 @@ Commands:
     Show this help message
 
 Examples:
-  claudeflare-cli add myaccount --mode max --tier 5
-  claudeflare-cli list
-  claudeflare-cli remove myaccount
-  claudeflare-cli pause myaccount
-  claudeflare-cli resume myaccount
+  ccflare-cli add myaccount --mode max --tier 5
+  ccflare-cli list
+  ccflare-cli remove myaccount
+  ccflare-cli pause myaccount
+  ccflare-cli resume myaccount
 `;
 }

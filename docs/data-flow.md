@@ -1,8 +1,8 @@
-# Claudeflare Data Flow Documentation
+# ccflare Data Flow Documentation
 
 ## Overview
 
-Claudeflare is a load balancer proxy for Claude API that distributes requests across multiple OAuth accounts to avoid rate limiting. This document details the complete data flow through the system, including request lifecycle, error handling, token refresh, rate limit management, and streaming response capture.
+ccflare is a load balancer proxy for Claude API that distributes requests across multiple OAuth accounts to avoid rate limiting. This document details the complete data flow through the system, including request lifecycle, error handling, token refresh, rate limit management, and streaming response capture.
 
 ## Table of Contents
 
@@ -21,7 +21,7 @@ Claudeflare is a load balancer proxy for Claude API that distributes requests ac
 
 ## Architecture Overview
 
-Claudeflare uses a modular architecture with the following key components:
+ccflare uses a modular architecture with the following key components:
 
 - **Server**: Main HTTP server handling routing between API, dashboard, and proxy requests
 - **Proxy**: Core request forwarding logic with retry, rate limiting, and usage tracking
@@ -33,9 +33,9 @@ Claudeflare uses a modular architecture with the following key components:
 
 ## Overview of Request Lifecycle
 
-The request lifecycle in Claudeflare follows these main stages:
+The request lifecycle in ccflare follows these main stages:
 
-1. **Request Reception**: Client sends request to Claudeflare server
+1. **Request Reception**: Client sends request to ccflare server
 2. **Route Determination**: Server checks if it's an API request, dashboard request, or proxy request
 3. **Account Selection**: Load balancer strategy selects available accounts based on configured algorithm
 4. **Token Validation**: System checks if account has valid access token, refreshes if needed
@@ -53,7 +53,7 @@ The request lifecycle in Claudeflare follows these main stages:
 ```mermaid
 sequenceDiagram
     participant Client
-    participant Server as Claudeflare Server
+    participant Server as ccflare Server
     participant Router as API Router
     participant LoadBalancer as Load Balancer
     participant Proxy
@@ -659,7 +659,7 @@ flowchart TD
 
 ## Summary
 
-The Claudeflare data flow is designed to:
+The ccflare data flow is designed to:
 
 1. **Maximize availability** through multiple account rotation and retry logic
 2. **Prevent stampedes** with singleton token refresh promises

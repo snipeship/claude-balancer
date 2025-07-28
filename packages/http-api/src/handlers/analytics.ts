@@ -1,4 +1,4 @@
-import { NO_ACCOUNT_ID } from "@claudeflare/core";
+import { NO_ACCOUNT_ID } from "@ccflare/core";
 import type { AnalyticsResponse, APIContext } from "../types";
 
 interface BucketConfig {

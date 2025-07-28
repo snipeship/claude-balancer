@@ -41,7 +41,7 @@ export ANTHROPIC_BASE_URL=http://localhost:8080
 - Cost estimation and budgeting
 
 ### 🛠️ Developer Tools
-- Interactive TUI (`bun run claudeflare`)
+- Interactive TUI (`bun run ccflare`)
 - Web dashboard (`http://localhost:8080/dashboard`)
 - CLI for account management
 - REST API for automation

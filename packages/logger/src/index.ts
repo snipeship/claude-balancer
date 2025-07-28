@@ -1,5 +1,5 @@
 import { EventEmitter } from "node:events";
-import type { LogEvent } from "@claudeflare/types";
+import type { LogEvent } from "@ccflare/types";
 import { logFileWriter } from "./file-writer";
 
 export enum LogLevel {
@@ -24,9 +24,9 @@ export class Logger {
 		this.prefix = prefix;
 		this.level = this.getLogLevelFromEnv() || level;
 		this.format = (process.env.LOG_FORMAT as LogFormat) || "pretty";
-		// Only show console output in debug mode or if CLAUDEFLARE_DEBUG is set
+		// Only show console output in debug mode or if ccflare_DEBUG is set
 		this.silentConsole = !(
-			process.env.CLAUDEFLARE_DEBUG === "1" || this.level === LogLevel.DEBUG
+			process.env.ccflare_DEBUG === "1" || this.level === LogLevel.DEBUG
 		);
 	}
 
@@ -122,7 +122,7 @@ export class Logger {
 		this.level = level;
 		// Update silentConsole when level changes
 		this.silentConsole = !(
-			process.env.CLAUDEFLARE_DEBUG === "1" || this.level === LogLevel.DEBUG
+			process.env.ccflare_DEBUG === "1" || this.level === LogLevel.DEBUG
 		);
 	}
 

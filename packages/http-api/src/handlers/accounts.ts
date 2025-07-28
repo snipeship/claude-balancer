@@ -1,8 +1,8 @@
 import type { Database } from "bun:sqlite";
-import * as cliCommands from "@claudeflare/cli-commands";
-import { Config } from "@claudeflare/config";
-import type { DatabaseOperations } from "@claudeflare/database";
-import { generatePKCE, getOAuthProvider } from "@claudeflare/providers";
+import * as cliCommands from "@ccflare/cli-commands";
+import { Config } from "@ccflare/config";
+import type { DatabaseOperations } from "@ccflare/database";
+import { generatePKCE, getOAuthProvider } from "@ccflare/providers";
 import type { AccountDeleteRequest, AccountResponse } from "../types";
 
 /**

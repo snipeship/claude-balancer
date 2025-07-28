@@ -1,4 +1,4 @@
-# Claudeflare Documentation
+# ccflare Documentation
 
 ## Track Every Request. Go Low-Level. Never Hit Rate Limits Again.
 
@@ -9,11 +9,11 @@
 
 ## Overview
 
-Claudeflare is the ultimate Claude API proxy with intelligent load balancing across multiple accounts. Built with TypeScript and Bun runtime, it provides full visibility into every request, response, and rate limit, ensuring your AI applications never experience downtime due to rate limiting.
+ccflare is the ultimate Claude API proxy with intelligent load balancing across multiple accounts. Built with TypeScript and Bun runtime, it provides full visibility into every request, response, and rate limit, ensuring your AI applications never experience downtime due to rate limiting.
 
-### Why Claudeflare?
+### Why ccflare?
 
-When working with Claude API at scale, rate limits can become a significant bottleneck. Claudeflare solves this by:
+When working with Claude API at scale, rate limits can become a significant bottleneck. ccflare solves this by:
 
 - **🚀 Zero Rate Limit Errors**: Automatically distributes requests across multiple accounts with intelligent failover
 - **📊 Request-Level Analytics**: Track latency, token usage, and costs in real-time with <10ms overhead
@@ -70,22 +70,22 @@ When working with Claude API at scale, rate limits can become a significant bott
 
 ## Quick Start
 
-### 1. Install Claudeflare
+### 1. Install ccflare
 
 ```bash
 # Clone the repository
-git clone https://github.com/snipeship/claudeflare.git
-cd claudeflare
+git clone https://github.com/snipeship/ccflare.git
+cd ccflare
 
 # Install dependencies
 bun install
 ```
 
-### 2. Start Claudeflare (TUI + Server)
+### 2. Start ccflare (TUI + Server)
 
 ```bash
-# Start Claudeflare with interactive TUI and server
-bun run claudeflare
+# Start ccflare with interactive TUI and server
+bun run ccflare
 
 # Or start just the server without TUI
 bun run server
@@ -112,20 +112,20 @@ bun cli add max-account --mode max --tier 5
 ### 4. Configure Your Claude Client
 
 ```bash
-# Set the base URL to use Claudeflare
+# Set the base URL to use ccflare
 export ANTHROPIC_BASE_URL=http://localhost:8080
 ```
 
 ### 5. Monitor Your Usage
 
 - **Web Dashboard**: Open [http://localhost:8080/dashboard](http://localhost:8080/dashboard) for real-time analytics
-- **Terminal UI**: Use the interactive TUI started with `bun run claudeflare`
+- **Terminal UI**: Use the interactive TUI started with `bun run ccflare`
 - **CLI**: Check status with `bun cli list`
 
 ## Project Structure
 
 ```
-claudeflare/
+ccflare/
 ├── apps/               # Application packages
 │   ├── cli/           # Command-line interface
 │   ├── server/        # Main proxy server
@@ -148,7 +148,7 @@ claudeflare/
 
 ```bash
 # Main commands
-bun run claudeflare    # Start TUI + Server
+bun run ccflare    # Start TUI + Server
 bun run server         # Start server only
 bun run tui            # Start TUI only
 bun run cli            # Run CLI commands
@@ -186,12 +186,12 @@ NODE_ENV=production         # Environment mode
 - [SQLite Documentation](https://www.sqlite.org/docs.html) - SQLite database docs
 
 ### Support
-- [GitHub Repository](https://github.com/snipeship/claudeflare) - Source code and issues
-- [Contributing](./contributing.md) - How to contribute to Claudeflare
+- [GitHub Repository](https://github.com/snipeship/ccflare) - Source code and issues
+- [Contributing](./contributing.md) - How to contribute to ccflare
 
 ## License
 
-Claudeflare is open source software licensed under the MIT License. See the [LICENSE](../LICENSE) file for details.
+ccflare is open source software licensed under the MIT License. See the [LICENSE](../LICENSE) file for details.
 
 ---
 

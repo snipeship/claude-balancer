@@ -1,5 +1,5 @@
 {
-	"name": "@claudeflare/load-balancer",
+	"name": "@ccflare/load-balancer",
 	"version": "0.1.0",
 	"type": "module",
 	"main": "./src/index.ts",
@@ -10,8 +10,8 @@
 		"typecheck": "bunx tsc --noEmit"
 	},
 	"dependencies": {
-		"@claudeflare/core": "workspace:*",
-		"@claudeflare/database": "workspace:*",
-		"@claudeflare/logger": "workspace:*"
+		"@ccflare/core": "workspace:*",
+		"@ccflare/database": "workspace:*",
+		"@ccflare/logger": "workspace:*"
 	}
 }

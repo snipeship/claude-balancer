@@ -1,4 +1,4 @@
-import { StrategyName } from "@claudeflare/types";
+import { StrategyName } from "@ccflare/types";
 import type { Account } from "./types";
 
 // Array of all strategies for backwards compatibility
@@ -23,4 +23,4 @@ export function isAccountAvailable(
 }
 
 // Re-export from types package for backwards compatibility
-export { StrategyName } from "@claudeflare/types";
+export { StrategyName } from "@ccflare/types";

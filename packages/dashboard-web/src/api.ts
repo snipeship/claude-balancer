@@ -1,4 +1,4 @@
-import type { AnalyticsResponse } from "@claudeflare/http-api";
+import type { AnalyticsResponse } from "@ccflare/http-api";
 
 export interface Account {
 	id: string;

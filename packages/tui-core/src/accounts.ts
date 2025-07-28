@@ -1,13 +1,13 @@
-import type { AccountListItem } from "@claudeflare/cli-commands";
-import * as cliCommands from "@claudeflare/cli-commands";
-import { openBrowser } from "@claudeflare/cli-commands";
-import { Config } from "@claudeflare/config";
-import { DatabaseFactory } from "@claudeflare/database";
+import type { AccountListItem } from "@ccflare/cli-commands";
+import * as cliCommands from "@ccflare/cli-commands";
+import { openBrowser } from "@ccflare/cli-commands";
+import { Config } from "@ccflare/config";
+import { DatabaseFactory } from "@ccflare/database";
 import {
 	generatePKCE,
 	getOAuthProvider,
 	type OAuthConfig,
-} from "@claudeflare/providers";
+} from "@ccflare/providers";
 
 export interface AddAccountOptions {
 	name: string;

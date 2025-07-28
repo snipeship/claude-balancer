@@ -1,4 +1,4 @@
-import { registerDisposable, unregisterDisposable } from "@claudeflare/core";
+import { registerDisposable, unregisterDisposable } from "@ccflare/core";
 import { DatabaseOperations, type RuntimeConfig } from "./index";
 
 let instance: DatabaseOperations | null = null;

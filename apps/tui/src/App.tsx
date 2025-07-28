@@ -48,7 +48,7 @@ export function App() {
 			<Box flexDirection="column" padding={1}>
 				<Box marginBottom={1}>
 					<Text color="cyan" bold>
-						🎯 Claudeflare TUI
+						🎯 ccflare TUI
 					</Text>
 				</Box>
 				<Text dimColor>Select an option:</Text>

@@ -1,6 +1,6 @@
-import type { Config } from "@claudeflare/config";
-import type { DatabaseOperations } from "@claudeflare/database";
-import { generatePKCE, getOAuthProvider } from "@claudeflare/providers";
+import type { Config } from "@ccflare/config";
+import type { DatabaseOperations } from "@ccflare/database";
+import { generatePKCE, getOAuthProvider } from "@ccflare/providers";
 import {
 	type PromptAdapter,
 	promptAccountRemovalConfirmation,

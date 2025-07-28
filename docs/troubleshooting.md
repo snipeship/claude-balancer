@@ -1,6 +1,6 @@
 # Troubleshooting Guide
 
-This guide helps you diagnose and resolve common issues with Claudeflare.
+This guide helps you diagnose and resolve common issues with ccflare.
 
 ## Table of Contents
 
@@ -49,7 +49,7 @@ This guide helps you diagnose and resolve common issues with Claudeflare.
 **Error Message**: `Token expired or missing for account: [name]`
 
 **Solutions**:
-1. Claudeflare automatically attempts to refresh expired tokens
+1. ccflare automatically attempts to refresh expired tokens
 2. If automatic refresh fails, re-authenticate the account
 3. Check for refresh token stampede prevention - multiple simultaneous refresh attempts are prevented
 
@@ -91,7 +91,7 @@ This guide helps you diagnose and resolve common issues with Claudeflare.
 
 ### Identifying Rate Limits
 
-Claudeflare tracks several types of rate limits:
+ccflare tracks several types of rate limits:
 
 1. **Hard Rate Limits**: Block account usage entirely
    - Status codes: `rate_limited`, `blocked`, `queueing_hard`, `payment_required`
@@ -109,10 +109,10 @@ Claudeflare tracks several types of rate limits:
 bun cli list
 
 # Check logs for rate limit messages
-cat /tmp/claudeflare-logs/app.log | grep "rate limited"
+cat /tmp/ccflare-logs/app.log | grep "rate limited"
 
 # Check specific rate limit status codes
-cat /tmp/claudeflare-logs/app.log | grep -E "queueing_hard|queueing_soft|allowed_warning"
+cat /tmp/ccflare-logs/app.log | grep -E "queueing_hard|queueing_soft|allowed_warning"
 
 # View rate limit reset times in the dashboard
 curl http://localhost:8080/api/accounts | jq '.[] | {name, rate_limit_status, rate_limit_reset}'
@@ -121,7 +121,7 @@ curl http://localhost:8080/api/accounts | jq '.[] | {name, rate_limit_status, ra
 ### Recovery Strategies
 
 **When an account is rate-limited**:
-1. Claudeflare automatically rotates to the next available account
+1. ccflare automatically rotates to the next available account
 2. Rate-limited accounts are marked with a reset timestamp
 3. Accounts automatically become available again after the reset time
 
@@ -215,7 +215,7 @@ export NO_PROXY=localhost,127.0.0.1
 **Solutions**:
 1. Check log file size (auto-rotates at 10MB):
    ```bash
-   ls -lh /tmp/claudeflare-logs/app.log
+   ls -lh /tmp/ccflare-logs/app.log
    ```
 
 2. Clear request history:
@@ -272,9 +272,9 @@ export NO_PROXY=localhost,127.0.0.1
 ### Config File Location
 
 Default locations by platform:
-- **macOS**: `~/Library/Application Support/claudeflare/config.json`
-- **Linux**: `~/.config/claudeflare/config.json`
-- **Windows**: `%APPDATA%\claudeflare\config.json`
+- **macOS**: `~/Library/Application Support/ccflare/config.json`
+- **Linux**: `~/.config/ccflare/config.json`
+- **Windows**: `%APPDATA%\ccflare\config.json`
 
 ### Invalid Configuration
 
@@ -287,15 +287,15 @@ Default locations by platform:
 **Solutions**:
 1. Validate JSON syntax:
    ```bash
-   cat ~/.config/claudeflare/config.json | jq .
+   cat ~/.config/ccflare/config.json | jq .
    ```
 
 2. Reset to defaults:
    ```bash
    # Backup current config
-   cp ~/.config/claudeflare/config.json ~/.config/claudeflare/config.backup.json
+   cp ~/.config/ccflare/config.json ~/.config/ccflare/config.backup.json
    # Remove corrupted config
-   rm ~/.config/claudeflare/config.json
+   rm ~/.config/ccflare/config.json
    # Restart server to create new config
    bun start
    ```
@@ -325,27 +325,27 @@ Environment variables override config file settings:
 1. Check database file permissions:
    ```bash
    # macOS
-   ls -la ~/Library/Application\ Support/claudeflare/claudeflare.db
+   ls -la ~/Library/Application\ Support/ccflare/ccflare.db
    
    # Linux
-   ls -la ~/.local/share/claudeflare/claudeflare.db
+   ls -la ~/.local/share/ccflare/ccflare.db
    
    # Windows
-   dir %LOCALAPPDATA%\claudeflare\claudeflare.db
+   dir %LOCALAPPDATA%\ccflare\ccflare.db
    ```
 
 2. Create the directory if it doesn't exist:
    ```bash
    # macOS
-   mkdir -p ~/Library/Application\ Support/claudeflare
+   mkdir -p ~/Library/Application\ Support/ccflare
    
    # Linux
-   mkdir -p ~/.local/share/claudeflare
+   mkdir -p ~/.local/share/ccflare
    ```
 
 3. Use a custom database path:
    ```bash
-   export CLAUDEFLARE_DB_PATH=/path/to/custom/claudeflare.db
+   export ccflare_DB_PATH=/path/to/custom/ccflare.db
    bun start
    ```
 
@@ -363,16 +363,16 @@ Environment variables override config file settings:
 2. If migrations fail repeatedly:
    ```bash
    # Backup existing database
-   cp ~/.local/share/claudeflare/claudeflare.db ~/.local/share/claudeflare/claudeflare.db.backup
+   cp ~/.local/share/ccflare/ccflare.db ~/.local/share/ccflare/ccflare.db.backup
    
    # Remove and let it recreate
-   rm ~/.local/share/claudeflare/claudeflare.db
+   rm ~/.local/share/ccflare/ccflare.db
    bun start
    ```
 
 3. Check for database corruption:
    ```bash
-   sqlite3 ~/.local/share/claudeflare/claudeflare.db "PRAGMA integrity_check;"
+   sqlite3 ~/.local/share/ccflare/ccflare.db "PRAGMA integrity_check;"
    ```
 
 ### Async Database Writer Issues
@@ -388,7 +388,7 @@ Environment variables override config file settings:
 2. During shutdown, ensure graceful termination (Ctrl+C) to flush pending writes
 3. Check logs for async writer errors:
    ```bash
-   grep "async-db-writer" /tmp/claudeflare-logs/app.log
+   grep "async-db-writer" /tmp/ccflare-logs/app.log
    ```
 
 ### Database Lock Errors
@@ -400,7 +400,7 @@ Environment variables override config file settings:
 - `SQLITE_BUSY`
 
 **Solutions**:
-1. Ensure only one instance of Claudeflare is running:
+1. Ensure only one instance of ccflare is running:
    ```bash
    ps aux | grep "bun start" | grep -v grep
    ```
@@ -412,7 +412,7 @@ Environment variables override config file settings:
 
 3. Check for hanging database connections:
    ```bash
-   lsof ~/.local/share/claudeflare/claudeflare.db
+   lsof ~/.local/share/ccflare/ccflare.db
    ```
 
 ## Streaming and Analytics Issues
@@ -432,7 +432,7 @@ Environment variables override config file settings:
 3. Check if streaming is working:
    ```bash
    # Look for streaming response logs
-   grep "Streaming response" /tmp/claudeflare-logs/app.log
+   grep "Streaming response" /tmp/ccflare-logs/app.log
    ```
 
 ### Analytics Data Issues
@@ -447,7 +447,7 @@ Environment variables override config file settings:
 1. Check if requests are being recorded:
    ```bash
    # Count recent requests in database
-   sqlite3 ~/.local/share/claudeflare/claudeflare.db "SELECT COUNT(*) FROM requests WHERE timestamp > strftime('%s', 'now', '-1 hour') * 1000;"
+   sqlite3 ~/.local/share/ccflare/ccflare.db "SELECT COUNT(*) FROM requests WHERE timestamp > strftime('%s', 'now', '-1 hour') * 1000;"
    ```
 
 2. Verify analytics endpoint:
@@ -474,13 +474,13 @@ Environment variables override config file settings:
 1. Usage is extracted from response headers and streaming data
 2. Check for usage extraction errors:
    ```bash
-   grep "extractUsageInfo" /tmp/claudeflare-logs/app.log
+   grep "extractUsageInfo" /tmp/ccflare-logs/app.log
    ```
 
 3. Verify model pricing data:
    ```bash
    # Pricing updates every 24 hours by default
-   grep "Fetching latest pricing" /tmp/claudeflare-logs/app.log
+   grep "Fetching latest pricing" /tmp/ccflare-logs/app.log
    ```
 
 4. Force offline pricing mode:
@@ -494,14 +494,14 @@ Environment variables override config file settings:
 ### Log File Locations
 
 Logs are stored in the system's temporary directory:
-- **Default**: `/tmp/claudeflare-logs/app.log` (Unix-like systems)
-- **Windows**: `%TEMP%\claudeflare-logs\app.log`
+- **Default**: `/tmp/ccflare-logs/app.log` (Unix-like systems)
+- **Windows**: `%TEMP%\ccflare-logs\app.log`
 
 ### Enabling Debug Mode
 
 **Method 1: Environment Variable**
 ```bash
-export CLAUDEFLARE_DEBUG=1
+export ccflare_DEBUG=1
 export LOG_LEVEL=DEBUG
 bun start
 ```
@@ -509,7 +509,7 @@ bun start
 **Method 2: Verbose Logging**
 ```bash
 # View real-time logs
-tail -f /tmp/claudeflare-logs/app.log
+tail -f /tmp/ccflare-logs/app.log
 ```
 
 ### Log Formats
@@ -530,19 +530,19 @@ bun start
 **Filter by log level**:
 ```bash
 # View only errors
-grep "ERROR" /tmp/claudeflare-logs/app.log
+grep "ERROR" /tmp/ccflare-logs/app.log
 
 # View warnings and errors
-grep -E "WARN|ERROR" /tmp/claudeflare-logs/app.log
+grep -E "WARN|ERROR" /tmp/ccflare-logs/app.log
 ```
 
 **Filter by component**:
 ```bash
 # View only proxy logs
-grep "\[Proxy\]" /tmp/claudeflare-logs/app.log
+grep "\[Proxy\]" /tmp/ccflare-logs/app.log
 
 # View only server logs
-grep "\[Server\]" /tmp/claudeflare-logs/app.log
+grep "\[Server\]" /tmp/ccflare-logs/app.log
 ```
 
 ## Common Error Messages
@@ -622,7 +622,7 @@ grep "\[Server\]" /tmp/claudeflare-logs/app.log
 **Meaning**: Another process is accessing the database
 
 **Solutions**:
-1. Ensure only one Claudeflare instance is running
+1. Ensure only one ccflare instance is running
 2. Kill any zombie processes
 3. Wait for current operations to complete
 
@@ -650,7 +650,7 @@ grep "\[Server\]" /tmp/claudeflare-logs/app.log
 **Meaning**: JSON syntax error in config file
 
 **Solutions**:
-1. Validate JSON syntax: `cat ~/.config/claudeflare/config.json | jq .`
+1. Validate JSON syntax: `cat ~/.config/ccflare/config.json | jq .`
 2. Check for trailing commas or missing quotes
 3. Reset to defaults by deleting config file
 
@@ -709,7 +709,7 @@ grep "\[Server\]" /tmp/claudeflare-logs/app.log
 **Solutions**:
 1. Check directory permissions
 2. Ensure parent directory exists
-3. Use custom path: `export CLAUDEFLARE_DB_PATH=/custom/path/db.db`
+3. Use custom path: `export ccflare_DB_PATH=/custom/path/db.db`
 
 ## Environment Variables Reference
 
@@ -729,14 +729,14 @@ grep "\[Server\]" /tmp/claudeflare-logs/app.log
 
 | Variable | Description | Default | Example |
 |----------|-------------|---------|---------|
-| `CLAUDEFLARE_CONFIG_PATH` | Custom config file location | Platform-specific | `/opt/claudeflare/config.json` |
-| `CLAUDEFLARE_DB_PATH` | Custom database location | Platform-specific | `/opt/claudeflare/data.db` |
+| `ccflare_CONFIG_PATH` | Custom config file location | Platform-specific | `/opt/ccflare/config.json` |
+| `ccflare_DB_PATH` | Custom database location | Platform-specific | `/opt/ccflare/data.db` |
 
 ### Logging and Debugging
 
 | Variable | Description | Default | Example |
 |----------|-------------|---------|---------|
-| `CLAUDEFLARE_DEBUG` | Enable debug mode | `0` | `1` |
+| `ccflare_DEBUG` | Enable debug mode | `0` | `1` |
 | `LOG_LEVEL` | Log level | `INFO` | `DEBUG`, `WARN`, `ERROR` |
 | `LOG_FORMAT` | Log format | `pretty` | `json` |
 
@@ -759,14 +759,14 @@ grep "\[Server\]" /tmp/claudeflare-logs/app.log
 
 ```bash
 # Development setup with debug logging
-export CLAUDEFLARE_DEBUG=1
+export ccflare_DEBUG=1
 export LOG_LEVEL=DEBUG
 export LOG_FORMAT=json
 bun start
 
 # Production setup with custom paths
-export CLAUDEFLARE_CONFIG_PATH=/etc/claudeflare/config.json
-export CLAUDEFLARE_DB_PATH=/var/lib/claudeflare/data.db
+export ccflare_CONFIG_PATH=/etc/ccflare/config.json
+export ccflare_DB_PATH=/var/lib/ccflare/data.db
 export PORT=3000
 bun start
 
@@ -779,7 +779,7 @@ bun start
 
 ## FAQ
 
-### Q: How do I know if Claudeflare is working?
+### Q: How do I know if ccflare is working?
 
 **A**: Check the health endpoint:
 ```bash
@@ -799,16 +799,16 @@ Expected response:
 }
 ```
 
-### Q: Can I use Claudeflare with multiple client applications?
+### Q: Can I use ccflare with multiple client applications?
 
-**A**: Yes, Claudeflare acts as a transparent proxy. Point any Claude API client to `http://localhost:8080` instead of `https://api.anthropic.com`.
+**A**: Yes, ccflare acts as a transparent proxy. Point any Claude API client to `http://localhost:8080` instead of `https://api.anthropic.com`.
 
 ### Q: How do I backup my accounts?
 
 **A**: The account data is stored in the SQLite database. Backup locations:
-- **macOS**: `~/Library/Application Support/claudeflare/claudeflare.db`
-- **Linux**: `~/.local/share/claudeflare/claudeflare.db`
-- **Windows**: `%LOCALAPPDATA%\claudeflare\claudeflare.db`
+- **macOS**: `~/Library/Application Support/ccflare/ccflare.db`
+- **Linux**: `~/.local/share/ccflare/ccflare.db`
+- **Windows**: `%LOCALAPPDATA%\ccflare\ccflare.db`
 
 ### Q: What happens during a graceful shutdown?
 
@@ -823,7 +823,7 @@ Expected response:
 ### Q: How do I migrate to a new machine?
 
 **A**: Copy these files to the new machine:
-1. Database file (`claudeflare.db`)
+1. Database file (`ccflare.db`)
 2. Config file (`config.json`)
 3. Set the same CLIENT_ID environment variable
 4. Ensure Bun is installed on the new machine
@@ -834,7 +834,7 @@ Expected response:
 1. Streaming responses are only captured up to 1MB
 2. Database writes are async and may be delayed
 3. Usage data depends on response headers from Anthropic
-4. Check if requests are being recorded: `sqlite3 claudeflare.db "SELECT COUNT(*) FROM requests;"`
+4. Check if requests are being recorded: `sqlite3 ccflare.db "SELECT COUNT(*) FROM requests;"`
 
 ### Q: How do I handle rate limits effectively?
 
@@ -845,7 +845,7 @@ Expected response:
 4. Set up alerts for hard rate limits
 5. Consider implementing request queuing in your application
 
-### Q: Can I use Claudeflare in production?
+### Q: Can I use ccflare in production?
 
 **A**: Yes, with these considerations:
 1. Use environment variables for sensitive configuration
@@ -879,7 +879,7 @@ Expected response:
 **A**: 
 - **Soft Limits** (`allowed_warning`, `queueing_soft`): Account can still be used but approaching limits
 - **Hard Limits** (`rate_limited`, `blocked`, `queueing_hard`): Account is blocked from use until reset
-- Claudeflare automatically handles both types and rotates accounts accordingly
+- ccflare automatically handles both types and rotates accounts accordingly
 
 ## Getting Help
 
@@ -897,13 +897,13 @@ When reporting issues, include:
 2. **Error Logs**:
    ```bash
    # Last 100 lines of logs
-   tail -n 100 /tmp/claudeflare-logs/app.log
+   tail -n 100 /tmp/ccflare-logs/app.log
    ```
 
 3. **Configuration** (sanitized):
    ```bash
    # Remove sensitive data before sharing
-   cat ~/.config/claudeflare/config.json | jq 'del(.client_id)'
+   cat ~/.config/ccflare/config.json | jq 'del(.client_id)'
    ```
 
 4. **Steps to Reproduce**:
@@ -916,7 +916,7 @@ When reporting issues, include:
 Save this as `debug-info.sh`:
 ```bash
 #!/bin/bash
-echo "=== Claudeflare Debug Info ==="
+echo "=== ccflare Debug Info ==="
 echo "Date: $(date)"
 echo "System: $(uname -a)"
 echo "Bun Version: $(bun --version)"
@@ -924,11 +924,11 @@ echo "Node Version: $(node --version 2>/dev/null || echo 'Node not installed')"
 echo ""
 
 echo "=== Environment Variables ==="
-env | grep -E "CLAUDEFLARE|CLIENT_ID|PORT|LB_STRATEGY|LOG_|PROXY" | sort
+env | grep -E "ccflare|CLIENT_ID|PORT|LB_STRATEGY|LOG_|PROXY" | sort
 echo ""
 
 echo "=== Process Info ==="
-ps aux | grep -E "bun start|claudeflare" | grep -v grep
+ps aux | grep -E "bun start|ccflare" | grep -v grep
 echo ""
 
 echo "=== Port Check ==="
@@ -936,26 +936,26 @@ lsof -i :${PORT:-8080} 2>/dev/null || echo "Port ${PORT:-8080} not in use"
 echo ""
 
 echo "=== Database Info ==="
-if [ -f "$HOME/.local/share/claudeflare/claudeflare.db" ]; then
-    echo "Database size: $(du -h "$HOME/.local/share/claudeflare/claudeflare.db" | cut -f1)"
-    echo "Request count: $(sqlite3 "$HOME/.local/share/claudeflare/claudeflare.db" "SELECT COUNT(*) FROM requests;" 2>/dev/null || echo "Could not query")"
-    echo "Account count: $(sqlite3 "$HOME/.local/share/claudeflare/claudeflare.db" "SELECT COUNT(*) FROM accounts;" 2>/dev/null || echo "Could not query")"
+if [ -f "$HOME/.local/share/ccflare/ccflare.db" ]; then
+    echo "Database size: $(du -h "$HOME/.local/share/ccflare/ccflare.db" | cut -f1)"
+    echo "Request count: $(sqlite3 "$HOME/.local/share/ccflare/ccflare.db" "SELECT COUNT(*) FROM requests;" 2>/dev/null || echo "Could not query")"
+    echo "Account count: $(sqlite3 "$HOME/.local/share/ccflare/ccflare.db" "SELECT COUNT(*) FROM accounts;" 2>/dev/null || echo "Could not query")"
 else
     echo "Database not found at default location"
 fi
 echo ""
 
 echo "=== Recent Errors (last 24h) ==="
-if [ -f "/tmp/claudeflare-logs/app.log" ]; then
-    grep "ERROR" /tmp/claudeflare-logs/app.log | tail -20
+if [ -f "/tmp/ccflare-logs/app.log" ]; then
+    grep "ERROR" /tmp/ccflare-logs/app.log | tail -20
 else
     echo "Log file not found"
 fi
 echo ""
 
 echo "=== Recent Rate Limits ==="
-if [ -f "/tmp/claudeflare-logs/app.log" ]; then
-    grep -E "rate_limited|queueing_hard|queueing_soft" /tmp/claudeflare-logs/app.log | tail -10
+if [ -f "/tmp/ccflare-logs/app.log" ]; then
+    grep -E "rate_limited|queueing_hard|queueing_soft" /tmp/ccflare-logs/app.log | tail -10
 else
     echo "Log file not found"
 fi
@@ -1005,7 +1005,7 @@ curl "http://localhost:8080/api/analytics?range=7d" | jq .
 curl "http://localhost:8080/api/analytics?range=1h&model=claude-3-opus&status=success" | jq .
 
 # Monitor real-time logs
-tail -f /tmp/claudeflare-logs/app.log | grep -E "INFO|WARN|ERROR"
+tail -f /tmp/ccflare-logs/app.log | grep -E "INFO|WARN|ERROR"
 ```
 
 ### Quick Troubleshooting Checklist
@@ -1024,12 +1024,12 @@ When experiencing issues, check these in order:
 
 3. **Recent Errors**
    ```bash
-   grep ERROR /tmp/claudeflare-logs/app.log | tail -20
+   grep ERROR /tmp/ccflare-logs/app.log | tail -20
    ```
 
 4. **Rate Limits**
    ```bash
-   grep "rate_limited" /tmp/claudeflare-logs/app.log | tail -10
+   grep "rate_limited" /tmp/ccflare-logs/app.log | tail -10
    ```
 
 5. **Network Connectivity**
@@ -1039,7 +1039,7 @@ When experiencing issues, check these in order:
 
 6. **Database Health**
    ```bash
-   sqlite3 ~/.local/share/claudeflare/claudeflare.db "PRAGMA integrity_check;"
+   sqlite3 ~/.local/share/ccflare/ccflare.db "PRAGMA integrity_check;"
    ```
 
 ### Common Quick Fixes
@@ -1050,8 +1050,8 @@ When experiencing issues, check these in order:
 | Token expired | Re-authenticate: `bun cli remove account && bun cli add account` |
 | Database locked | Kill duplicate processes: `pkill -f "bun start"` |
 | Port in use | Use different port: `PORT=3000 bun start` |
-| Config corrupted | Reset config: `rm ~/.config/claudeflare/config.json` |
+| Config corrupted | Reset config: `rm ~/.config/ccflare/config.json` |
 | Analytics missing | Clear history: `bun cli clear-history` |
 | Slow responses | Switch strategy: `bun cli config set lb_strategy session` |
 
-Remember: Most issues can be resolved by checking logs, verifying account status, and ensuring proper network connectivity. When in doubt, restart the service with debug logging enabled: `CLAUDEFLARE_DEBUG=1 LOG_LEVEL=DEBUG bun start`
+Remember: Most issues can be resolved by checking logs, verifying account status, and ensuring proper network connectivity. When in doubt, restart the service with debug logging enabled: `ccflare_DEBUG=1 LOG_LEVEL=DEBUG bun start`

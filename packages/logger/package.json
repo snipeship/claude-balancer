@@ -1,5 +1,5 @@
 {
-	"name": "@claudeflare/logger",
+	"name": "@ccflare/logger",
 	"version": "0.1.0",
 	"type": "module",
 	"main": "./src/index.ts",
@@ -10,7 +10,7 @@
 		"typecheck": "bunx tsc --noEmit"
 	},
 	"dependencies": {
-		"@claudeflare/core": "workspace:*",
-		"@claudeflare/types": "workspace:*"
+		"@ccflare/core": "workspace:*",
+		"@ccflare/types": "workspace:*"
 	}
 }

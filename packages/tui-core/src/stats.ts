@@ -1,4 +1,4 @@
-import { DatabaseFactory } from "@claudeflare/database";
+import { DatabaseFactory } from "@ccflare/database";
 
 export interface Stats {
 	totalRequests: number;

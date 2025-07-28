@@ -1,6 +1,6 @@
 import type { Database } from "bun:sqlite";
-import { NO_ACCOUNT_ID } from "@claudeflare/core";
-import type { DatabaseOperations } from "@claudeflare/database";
+import { NO_ACCOUNT_ID } from "@ccflare/core";
+import type { DatabaseOperations } from "@ccflare/database";
 import { jsonResponse } from "../utils/http-error";
 
 /**
