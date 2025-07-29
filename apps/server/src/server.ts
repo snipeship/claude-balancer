@@ -113,8 +113,17 @@ const server = serve({
 			return apiResponse;
 		}
 
+		// Check API key for auth protection
+		const apiKey = process.env.API_KEY;
+
 		// Dashboard routes
-		if (url.pathname === "/" || url.pathname === "/dashboard") {
+		if (url.pathname === "/" || url.pathname === "/dashboard" || 
+			(apiKey && url.pathname === `/${apiKey}/`)) {
+			
+			// If API key is required, only allow /{key}/ access
+			if (apiKey && url.pathname !== `/${apiKey}/`) {
+				return new Response("Not Found", { status: 404 });
+			}
 			// Read the HTML file directly
 			let dashboardPath: string;
 			try {
@@ -139,18 +148,33 @@ const server = serve({
 		}
 
 		// Serve dashboard static assets
-		if ((dashboardManifest as Record<string, string>)[url.pathname]) {
+		let assetPathname = url.pathname;
+		let isAuthenticatedAssetRequest = false;
+		
+		// If API key is set, check for auth-prefixed asset paths
+		if (apiKey && url.pathname.startsWith(`/${apiKey}/`)) {
+			// Strip the key prefix for asset lookup
+			assetPathname = url.pathname.substring(`/${apiKey}`.length);
+			isAuthenticatedAssetRequest = true;
+		}
+		
+		if ((dashboardManifest as Record<string, string>)[assetPathname]) {
+			// If API key is required but request is not authenticated, block access
+			if (apiKey && !isAuthenticatedAssetRequest) {
+				return new Response("Not Found", { status: 404 });
+			}
+			
 			try {
 				let assetPath: string;
 				try {
 					assetPath = Bun.resolveSync(
-						`@ccflare/dashboard-web/dist${url.pathname}`,
+						`@ccflare/dashboard-web/dist${assetPathname}`,
 						dirname(import.meta.path),
 					);
 				} catch {
 					// Fallback to relative path in mono-repo
 					assetPath = Bun.resolveSync(
-						`../../../packages/dashboard-web/dist${url.pathname}`,
+						`../../../packages/dashboard-web/dist${assetPathname}`,
 						dirname(import.meta.path),
 					);
 				}
@@ -172,8 +196,6 @@ const server = serve({
 		}
 
 		// Handle API authentication and proxying
-		const apiKey = process.env.API_KEY;
-
 		if (apiKey) {
 			// Auth required - check for /key/v1/ format
 			const pathParts = url.pathname.split('/').filter(Boolean);
