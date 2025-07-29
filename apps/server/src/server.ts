@@ -171,13 +171,25 @@ const server = serve({
 			}
 		}
 
-		// Only proxy requests to Anthropic API
-		if (!url.pathname.startsWith("/v1/")) {
-			return new Response("Not Found", { status: 404 });
-		}
+		// Handle API authentication and proxying
+		const apiKey = process.env.API_KEY;
 
-		// Handle proxy request
-		return handleProxy(req, url, proxyContext);
+		if (apiKey) {
+			// Auth required - check for /key/v1/ format
+			const pathParts = url.pathname.split('/').filter(Boolean);
+			if (pathParts[0] === apiKey && pathParts[1] === 'v1') {
+				// Valid auth - rewrite path and proxy
+				url.pathname = '/' + pathParts.slice(1).join('/');
+				return handleProxy(req, url, proxyContext);
+			}
+			return new Response("Not Found", { status: 404 });
+		} else {
+			// No auth required - allow direct /v1/ access
+			if (!url.pathname.startsWith("/v1/")) {
+				return new Response("Not Found", { status: 404 });
+			}
+			return handleProxy(req, url, proxyContext);
+		}
 	},
 });
 

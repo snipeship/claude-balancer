@@ -32,6 +32,10 @@ RUN mkdir -p /app/data && chown ccflare:ccflare /app/data
 
 # Switch to non-root user
 USER ccflare
+
+# Set API key for authentication (change this in production!)
+ENV API_KEY=ccflare-default-key
+
 # Set database path to persistent volume mount
 ENV ccflare_DB_PATH=/app/data/ccflare.db
 
