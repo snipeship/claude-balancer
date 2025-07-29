@@ -3,16 +3,14 @@ FROM oven/bun:1-alpine AS builder
 
 WORKDIR /app
 
-# Copy package files
+# Copy package files for dependency caching
 COPY package.json bun.lock* ./
-COPY apps/*/package.json ./apps/*/
-COPY packages/*/package.json ./packages/*/
+
+# Copy all source code (required for workspace dependencies)
+COPY . .
 
 # Install dependencies
 RUN bun install --frozen-lockfile
-
-# Copy source code
-COPY . .
 
 # Build the project
 RUN bun run build
