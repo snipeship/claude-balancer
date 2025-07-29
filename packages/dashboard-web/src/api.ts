@@ -194,6 +194,12 @@ class API {
 		return res.json() as Promise<RequestSummary[]>;
 	}
 
+	async getRequestPayload(requestId: string): Promise<RequestPayload> {
+		const res = await fetch(`${this.baseUrl}/api/requests/payload/${requestId}`);
+		if (!res.ok) throw new Error("Failed to fetch request payload");
+		return res.json() as Promise<RequestPayload>;
+	}
+
 	async getAnalytics(
 		range = "24h",
 		filters?: {

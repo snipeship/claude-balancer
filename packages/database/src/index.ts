@@ -17,34 +17,62 @@ import { withDatabaseRetry, withDatabaseRetrySync } from "./retry";
  * Apply SQLite pragmas for optimal performance on distributed filesystems
  */
 function configureSqlite(db: Database, config: DatabaseConfig): void {
-	// Enable WAL mode for better concurrency
-	if (config.walMode !== false) {
-		db.run("PRAGMA journal_mode = WAL");
-	}
+	try {
+		// Check database integrity first
+		const integrityResult = db.query("PRAGMA integrity_check").get() as { integrity_check: string };
+		if (integrityResult.integrity_check !== "ok") {
+			throw new Error(`Database integrity check failed: ${integrityResult.integrity_check}`);
+		}
 
-	// Set busy timeout for lock handling
-	if (config.busyTimeoutMs !== undefined) {
-		db.run(`PRAGMA busy_timeout = ${config.busyTimeoutMs}`);
-	}
+		// Enable WAL mode for better concurrency (with error handling)
+		if (config.walMode !== false) {
+			try {
+				const result = db.query("PRAGMA journal_mode = WAL").get() as { journal_mode: string };
+				if (result.journal_mode !== "wal") {
+					console.warn("Failed to enable WAL mode, falling back to DELETE mode");
+					db.run("PRAGMA journal_mode = DELETE");
+				}
+			} catch (error) {
+				console.warn("WAL mode failed, using DELETE mode:", error);
+				db.run("PRAGMA journal_mode = DELETE");
+			}
+		}
 
-	// Configure cache size
-	if (config.cacheSize !== undefined) {
-		db.run(`PRAGMA cache_size = ${config.cacheSize}`);
-	}
+		// Set busy timeout for lock handling
+		if (config.busyTimeoutMs !== undefined) {
+			db.run(`PRAGMA busy_timeout = ${config.busyTimeoutMs}`);
+		}
 
-	// Set synchronous mode
-	if (config.synchronous !== undefined) {
-		db.run(`PRAGMA synchronous = ${config.synchronous}`);
-	}
+		// Configure cache size
+		if (config.cacheSize !== undefined) {
+			db.run(`PRAGMA cache_size = ${config.cacheSize}`);
+		}
 
-	// Configure memory-mapped I/O
-	if (config.mmapSize !== undefined) {
-		db.run(`PRAGMA mmap_size = ${config.mmapSize}`);
-	}
+		// Set synchronous mode (more conservative for distributed filesystems)
+		const syncMode = config.synchronous || 'FULL'; // Default to FULL for safety
+		db.run(`PRAGMA synchronous = ${syncMode}`);
 
-	// Additional optimizations for distributed filesystems
-	db.run("PRAGMA temp_store = MEMORY");
-	db.run("PRAGMA foreign_keys = ON");
+		// Configure memory-mapped I/O (disable on distributed filesystems if problematic)
+		if (config.mmapSize !== undefined && config.mmapSize > 0) {
+			try {
+				db.run(`PRAGMA mmap_size = ${config.mmapSize}`);
+			} catch (error) {
+				console.warn("Memory-mapped I/O failed, disabling:", error);
+				db.run("PRAGMA mmap_size = 0");
+			}
+		}
+
+		// Additional optimizations for distributed filesystems
+		db.run("PRAGMA temp_store = MEMORY");
+		db.run("PRAGMA foreign_keys = ON");
+
+		// Add checkpoint interval for WAL mode
+		db.run("PRAGMA wal_autocheckpoint = 1000");
+
+	} catch (error) {
+		console.error("Database configuration failed:", error);
+		throw new Error(`Failed to configure SQLite database: ${error}`);
+	}
 }
 
 export interface RuntimeConfig {
@@ -85,12 +113,13 @@ export class DatabaseOperations implements StrategyStore, Disposable {
 		const resolvedPath = dbPath ?? resolveDbPath();
 
 		// Default database configuration optimized for distributed filesystems
+		// More conservative settings to prevent corruption on Rook Ceph
 		this.dbConfig = {
 			walMode: true,
-			busyTimeoutMs: 5000,
-			cacheSize: -20000, // 20MB cache
-			synchronous: 'NORMAL',
-			mmapSize: 268435456, // 256MB
+			busyTimeoutMs: 10000, // Increased timeout for distributed storage
+			cacheSize: -10000, // Reduced cache size (10MB) for stability
+			synchronous: 'FULL', // Full synchronous mode for data safety
+			mmapSize: 0, // Disable memory-mapped I/O on distributed filesystems
 			...dbConfig
 		};
 

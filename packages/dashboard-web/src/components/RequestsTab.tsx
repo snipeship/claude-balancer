@@ -25,6 +25,7 @@ export function RequestsTab() {
 		new Set(),
 	);
 	const [modalRequest, setModalRequest] = useState<RequestPayload | null>(null);
+	const [loadingModal, setLoadingModal] = useState(false);
 
 	const loadRequests = useCallback(async () => {
 		try {
@@ -49,6 +50,25 @@ export function RequestsTab() {
 		}
 	}, []);
 
+	const openRequestModal = useCallback(async (requestSummary: any) => {
+		setLoadingModal(true);
+		try {
+			// Fetch the full payload data for this request
+			const fullPayload = await api.getRequestPayload(requestSummary.id);
+			setModalRequest(fullPayload);
+		} catch (err) {
+			console.error("Failed to load request details:", err);
+			// Fallback: show what we have with empty request/response
+			setModalRequest({
+				...requestSummary,
+				request: { headers: {}, body: null },
+				response: requestSummary.response || null,
+			});
+		} finally {
+			setLoadingModal(false);
+		}
+	}, []);
+
 	useEffect(() => {
 		loadRequests();
 		const interval = setInterval(loadRequests, 10000);
@@ -67,19 +87,7 @@ export function RequestsTab() {
 		});
 	};
 
-	const decodeBase64 = (str: string | null): string => {
-		if (!str) return "No data";
-		try {
-			// Handle edge cases like "[streamed]" from older data
-			if (str === "[streamed]") {
-				return "[Streaming data not captured]";
-			}
-			return atob(str);
-		} catch (error) {
-			console.error("Failed to decode base64:", error, "Input:", str);
-			return `Failed to decode: ${str}`;
-		}
-	};
+	// TODO: Re-implement decodeBase64 when implementing full payload copy functionality
 
 	/**
 	 * Copy the given request to the clipboard as pretty-printed JSON, with
@@ -226,35 +234,24 @@ export function RequestsTab() {
 										<Button
 											variant="ghost"
 											size="icon"
-											onClick={() => setModalRequest(request)}
+											onClick={() => openRequestModal(request)}
 											title="View Details"
+											disabled={loadingModal}
 										>
-											<Eye className="h-4 w-4" />
+											{loadingModal ? (
+												<RefreshCw className="h-4 w-4 animate-spin" />
+											) : (
+												<Eye className="h-4 w-4" />
+											)}
 										</Button>
 										<CopyButton
 											variant="ghost"
 											size="icon"
 											title="Copy as JSON"
 											getValue={() => {
-												const decoded: RequestPayload & { decoded?: true } = {
-													...request,
-													request: {
-														...request.request,
-														body: request.request.body
-															? decodeBase64(request.request.body)
-															: null,
-													},
-													response: request.response
-														? {
-																...request.response,
-																body: request.response.body
-																	? decodeBase64(request.response.body)
-																	: null,
-															}
-														: null,
-													decoded: true,
-												};
-												return JSON.stringify(decoded, null, 2);
+												// For now, just copy the summary data
+												// TODO: Implement async copy with full payload data
+												return JSON.stringify(request, null, 2);
 											}}
 										/>
 									</div>

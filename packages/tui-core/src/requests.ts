@@ -37,29 +37,92 @@ export interface RequestSummary {
 
 export async function getRequests(limit = 100): Promise<RequestPayload[]> {
 	const dbOps = DatabaseFactory.getInstance();
-	// Use the optimized query that includes account names in a single JOIN
-	const rows = dbOps.listRequestPayloadsWithAccountNames(limit);
 
-	const parsed = rows.map((r: { id: string; json: string; account_name: string | null }) => {
-		try {
-			const data = JSON.parse(r.json);
-			// Add account name from the JOIN result (no additional query needed)
-			if (r.account_name && data.meta) {
-				data.meta.accountName = r.account_name;
-			}
-			return { id: r.id, ...data } as RequestPayload;
-		} catch {
-			return {
-				id: r.id,
-				error: "Failed to parse payload",
-				request: { headers: {}, body: null },
-				response: null,
-				meta: { timestamp: Date.now() },
-			} as RequestPayload;
-		}
-	});
+	// Use optimized approach: get summary data from requests table (no JSON parsing)
+	const summaries = withDatabaseRetrySync(() => {
+		const db = dbOps.getDatabase();
+		return db
+			.query(`
+				SELECT
+					r.id,
+					r.timestamp,
+					r.method,
+					r.path,
+					r.account_used,
+					r.status_code,
+					r.success,
+					r.error_message,
+					r.response_time_ms,
+					r.failover_attempts,
+					r.model,
+					r.input_tokens,
+					r.output_tokens,
+					r.total_tokens,
+					r.cache_read_input_tokens,
+					r.cache_creation_input_tokens,
+					r.cost_usd,
+					a.name as account_name
+				FROM requests r
+				LEFT JOIN accounts a ON r.account_used = a.id
+				ORDER BY r.timestamp DESC
+				LIMIT ?
+			`)
+			.all(limit);
+	}, dbOps.getRetryConfig(), "getRequests") as Array<{
+		id: string;
+		timestamp: number;
+		method: string;
+		path: string;
+		account_used: string | null;
+		account_name: string | null;
+		status_code: number | null;
+		success: 0 | 1;
+		error_message: string | null;
+		response_time_ms: number | null;
+		failover_attempts: number;
+		model: string | null;
+		input_tokens: number | null;
+		output_tokens: number | null;
+		total_tokens: number | null;
+		cache_read_input_tokens: number | null;
+		cache_creation_input_tokens: number | null;
+		cost_usd: number | null;
+	}>;
+
+	// Transform to RequestPayload format with summary data only
+	const parsed = summaries.map((summary) => ({
+		id: summary.id,
+		request: { headers: {}, body: null }, // Empty for summary view
+		response: summary.status_code ? {
+			status: summary.status_code,
+			headers: {},
+			body: null
+		} : null,
+		error: summary.error_message || undefined,
+		meta: {
+			timestamp: summary.timestamp,
+			accountId: summary.account_used,
+			accountName: summary.account_name,
+			success: summary.success === 1,
+			retry: summary.failover_attempts,
+			rateLimited: false, // Would need calculation if needed
+		},
+	})) as RequestPayload[];
 
 	return parsed;
+}
+
+/**
+ * Get full request payload data for a specific request (for detailed view)
+ */
+export async function getRequestPayload(requestId: string): Promise<RequestPayload | null> {
+	const dbOps = DatabaseFactory.getInstance();
+
+	const payload = withDatabaseRetrySync(() => {
+		return dbOps.getRequestPayload(requestId);
+	}, dbOps.getRetryConfig(), "getRequestPayload");
+
+	return payload as RequestPayload | null;
 }
 
 export async function getRequestSummaries(

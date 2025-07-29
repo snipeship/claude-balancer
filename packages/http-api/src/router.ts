@@ -49,7 +49,6 @@ export class APIRouter {
 		const _accountTierHandler = createAccountTierUpdateHandler(dbOps);
 		const requestsSummaryHandler = createRequestsSummaryHandler(db);
 		const requestsDetailHandler = createRequestsDetailHandler(dbOps);
-		const requestPayloadHandler = createRequestPayloadHandler(dbOps);
 		const configHandlers = createConfigHandlers(config);
 		const logsStreamHandler = createLogsStreamHandler();
 		const logsHistoryHandler = createLogsHistoryHandler();
@@ -69,11 +68,7 @@ export class APIRouter {
 			const limit = parseInt(url.searchParams.get("limit") || "100");
 			return requestsDetailHandler(limit);
 		});
-		this.handlers.set("GET:/api/requests/payload/:id", (_req, url) => {
-			const pathParts = url.pathname.split('/');
-			const requestId = pathParts[pathParts.length - 1];
-			return requestPayloadHandler(requestId);
-		});
+		// Note: Dynamic route for request payloads is handled in the route() method
 		this.handlers.set("GET:/api/config", () => configHandlers.getConfig());
 		this.handlers.set("GET:/api/config/strategy", () =>
 			configHandlers.getStrategy(),
@@ -118,6 +113,14 @@ export class APIRouter {
 		const handler = this.handlers.get(key);
 		if (handler) {
 			return await this.wrapHandler(handler)(req, url);
+		}
+
+		// Check for dynamic request payload endpoints
+		if (path.startsWith("/api/requests/payload/") && method === "GET") {
+			const parts = path.split("/");
+			const requestId = parts[4]; // /api/requests/payload/{id}
+			const requestPayloadHandler = createRequestPayloadHandler(this.context.dbOps);
+			return await this.wrapHandler(() => requestPayloadHandler(requestId))(req, url);
 		}
 
 		// Check for dynamic account endpoints
