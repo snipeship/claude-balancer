@@ -13,6 +13,19 @@ export interface RuntimeConfig {
 	retry: { attempts: number; delayMs: number; backoff: number };
 	sessionDurationMs: number;
 	port: number;
+	database?: {
+		walMode?: boolean;
+		busyTimeoutMs?: number;
+		cacheSize?: number;
+		synchronous?: 'OFF' | 'NORMAL' | 'FULL';
+		mmapSize?: number;
+		retry?: {
+			attempts?: number;
+			delayMs?: number;
+			backoff?: number;
+			maxDelayMs?: number;
+		};
+	};
 }
 
 export interface ConfigData {
@@ -23,6 +36,16 @@ export interface ConfigData {
 	retry_backoff?: number;
 	session_duration_ms?: number;
 	port?: number;
+	// Database configuration
+	db_wal_mode?: boolean;
+	db_busy_timeout_ms?: number;
+	db_cache_size?: number;
+	db_synchronous?: 'OFF' | 'NORMAL' | 'FULL';
+	db_mmap_size?: number;
+	db_retry_attempts?: number;
+	db_retry_delay_ms?: number;
+	db_retry_backoff?: number;
+	db_retry_max_delay_ms?: number;
 	[key: string]: string | number | boolean | undefined;
 }
 
@@ -134,6 +157,19 @@ export class Config extends EventEmitter {
 			},
 			sessionDurationMs: 5 * 60 * 60 * 1000, // 5 hours
 			port: 8080,
+			database: {
+				walMode: true,
+				busyTimeoutMs: 5000,
+				cacheSize: -20000, // 20MB cache
+				synchronous: 'NORMAL',
+				mmapSize: 268435456, // 256MB
+				retry: {
+					attempts: 3,
+					delayMs: 100,
+					backoff: 2,
+					maxDelayMs: 5000,
+				},
+			},
 		};
 
 		// Override with environment variables if present
@@ -174,6 +210,35 @@ export class Config extends EventEmitter {
 		}
 		if (typeof this.data.port === "number") {
 			defaults.port = this.data.port;
+		}
+
+		// Database configuration overrides
+		if (typeof this.data.db_wal_mode === "boolean") {
+			defaults.database!.walMode = this.data.db_wal_mode;
+		}
+		if (typeof this.data.db_busy_timeout_ms === "number") {
+			defaults.database!.busyTimeoutMs = this.data.db_busy_timeout_ms;
+		}
+		if (typeof this.data.db_cache_size === "number") {
+			defaults.database!.cacheSize = this.data.db_cache_size;
+		}
+		if (typeof this.data.db_synchronous === "string") {
+			defaults.database!.synchronous = this.data.db_synchronous as 'OFF' | 'NORMAL' | 'FULL';
+		}
+		if (typeof this.data.db_mmap_size === "number") {
+			defaults.database!.mmapSize = this.data.db_mmap_size;
+		}
+		if (typeof this.data.db_retry_attempts === "number") {
+			defaults.database!.retry!.attempts = this.data.db_retry_attempts;
+		}
+		if (typeof this.data.db_retry_delay_ms === "number") {
+			defaults.database!.retry!.delayMs = this.data.db_retry_delay_ms;
+		}
+		if (typeof this.data.db_retry_backoff === "number") {
+			defaults.database!.retry!.backoff = this.data.db_retry_backoff;
+		}
+		if (typeof this.data.db_retry_max_delay_ms === "number") {
+			defaults.database!.retry!.maxDelayMs = this.data.db_retry_max_delay_ms;
 		}
 
 		return defaults;

@@ -8,65 +8,187 @@ import {
 	type StrategyStore,
 	toAccount,
 } from "@ccflare/core";
+import type { RuntimeConfig as ConfigRuntimeConfig } from "@ccflare/config";
 import { ensureSchema, runMigrations } from "./migrations";
 import { resolveDbPath } from "./paths";
+import { withDatabaseRetry, withDatabaseRetrySync } from "./retry";
+
+/**
+ * Apply SQLite pragmas for optimal performance on distributed filesystems
+ */
+function configureSqlite(db: Database, config: DatabaseConfig): void {
+	// Enable WAL mode for better concurrency
+	if (config.walMode !== false) {
+		db.run("PRAGMA journal_mode = WAL");
+	}
+
+	// Set busy timeout for lock handling
+	if (config.busyTimeoutMs !== undefined) {
+		db.run(`PRAGMA busy_timeout = ${config.busyTimeoutMs}`);
+	}
+
+	// Configure cache size
+	if (config.cacheSize !== undefined) {
+		db.run(`PRAGMA cache_size = ${config.cacheSize}`);
+	}
+
+	// Set synchronous mode
+	if (config.synchronous !== undefined) {
+		db.run(`PRAGMA synchronous = ${config.synchronous}`);
+	}
+
+	// Configure memory-mapped I/O
+	if (config.mmapSize !== undefined) {
+		db.run(`PRAGMA mmap_size = ${config.mmapSize}`);
+	}
+
+	// Additional optimizations for distributed filesystems
+	db.run("PRAGMA temp_store = MEMORY");
+	db.run("PRAGMA foreign_keys = ON");
+}
 
 export interface RuntimeConfig {
 	sessionDurationMs?: number;
 }
 
+export interface DatabaseConfig {
+	/** Enable WAL (Write-Ahead Logging) mode for better concurrency */
+	walMode?: boolean;
+	/** SQLite busy timeout in milliseconds */
+	busyTimeoutMs?: number;
+	/** Cache size in pages (negative value = KB) */
+	cacheSize?: number;
+	/** Synchronous mode: OFF, NORMAL, FULL */
+	synchronous?: 'OFF' | 'NORMAL' | 'FULL';
+	/** Memory-mapped I/O size in bytes */
+	mmapSize?: number;
+}
+
+export interface DatabaseRetryConfig {
+	/** Maximum number of retry attempts for database operations */
+	attempts?: number;
+	/** Initial delay between retries in milliseconds */
+	delayMs?: number;
+	/** Backoff multiplier for exponential backoff */
+	backoff?: number;
+	/** Maximum delay between retries in milliseconds */
+	maxDelayMs?: number;
+}
+
 export class DatabaseOperations implements StrategyStore, Disposable {
 	private db: Database;
 	private runtime?: RuntimeConfig;
+	private dbConfig: DatabaseConfig;
+	private retryConfig: DatabaseRetryConfig;
 
-	constructor(dbPath?: string) {
+	constructor(dbPath?: string, dbConfig?: DatabaseConfig, retryConfig?: DatabaseRetryConfig) {
 		const resolvedPath = dbPath ?? resolveDbPath();
+
+		// Default database configuration optimized for distributed filesystems
+		this.dbConfig = {
+			walMode: true,
+			busyTimeoutMs: 5000,
+			cacheSize: -20000, // 20MB cache
+			synchronous: 'NORMAL',
+			mmapSize: 268435456, // 256MB
+			...dbConfig
+		};
+
+		// Default retry configuration for database operations
+		this.retryConfig = {
+			attempts: 3,
+			delayMs: 100,
+			backoff: 2,
+			maxDelayMs: 5000,
+			...retryConfig
+		};
 
 		// Ensure the directory exists
 		const dir = dirname(resolvedPath);
 		mkdirSync(dir, { recursive: true });
 
 		this.db = new Database(resolvedPath, { create: true });
+
+		// Apply SQLite configuration for distributed filesystem optimization
+		configureSqlite(this.db, this.dbConfig);
+
 		ensureSchema(this.db);
 		runMigrations(this.db);
 	}
 
-	setRuntimeConfig(runtime: RuntimeConfig): void {
-		this.runtime = runtime;
+	setRuntimeConfig(runtime: ConfigRuntimeConfig): void {
+		this.runtime = runtime as any; // Keep backward compatibility
+
+		// Update retry config from runtime config if available
+		if (runtime.database?.retry) {
+			this.retryConfig = {
+				...this.retryConfig,
+				...runtime.database.retry
+			};
+		}
 	}
 
 	getDatabase(): Database {
 		return this.db;
 	}
 
-	getAllAccounts(): Account[] {
-		const rows = this.db
-			.query<AccountRow, []>(`
-      SELECT 
-        id,
-        name,
-        provider,
-        api_key,
-        refresh_token,
-        access_token,
-        expires_at,
-        created_at,
-        last_used,
-        request_count,
-        total_requests,
-        rate_limited_until,
-        session_start,
-        session_request_count,
-        COALESCE(account_tier, 1) as account_tier,
-        COALESCE(paused, 0) as paused,
-        rate_limit_reset,
-        rate_limit_status,
-        rate_limit_remaining
-      FROM accounts
-    `)
-			.all();
+	/**
+	 * Get the current retry configuration
+	 */
+	getRetryConfig(): DatabaseRetryConfig {
+		return this.retryConfig;
+	}
 
-		return rows.map(toAccount);
+	/**
+	 * Execute a database operation with retry logic
+	 */
+	private async withRetry<T>(
+		operation: () => T | Promise<T>,
+		operationName: string
+	): Promise<T> {
+		return withDatabaseRetry(operation, this.retryConfig, operationName);
+	}
+
+	/**
+	 * Execute a synchronous database operation with retry logic
+	 */
+	private withRetrySync<T>(
+		operation: () => T,
+		operationName: string
+	): T {
+		return withDatabaseRetrySync(operation, this.retryConfig, operationName);
+	}
+
+	getAllAccounts(): Account[] {
+		return this.withRetrySync(() => {
+			const rows = this.db
+				.query<AccountRow, []>(`
+	      SELECT
+	        id,
+	        name,
+	        provider,
+	        api_key,
+	        refresh_token,
+	        access_token,
+	        expires_at,
+	        created_at,
+	        last_used,
+	        request_count,
+	        total_requests,
+	        rate_limited_until,
+	        session_start,
+	        session_request_count,
+	        COALESCE(account_tier, 1) as account_tier,
+	        COALESCE(paused, 0) as paused,
+	        rate_limit_reset,
+	        rate_limit_status,
+	        rate_limit_remaining
+	      FROM accounts
+	    `)
+				.all();
+
+			return rows.map(toAccount);
+		}, "getAllAccounts");
 	}
 
 	updateAccountTokens(
@@ -75,17 +197,19 @@ export class DatabaseOperations implements StrategyStore, Disposable {
 		expiresAt: number,
 		refreshToken?: string,
 	): void {
-		if (refreshToken) {
-			this.db.run(
-				`UPDATE accounts SET access_token = ?, expires_at = ?, refresh_token = ? WHERE id = ?`,
-				[accessToken, expiresAt, refreshToken, accountId],
-			);
-		} else {
-			this.db.run(
-				`UPDATE accounts SET access_token = ?, expires_at = ? WHERE id = ?`,
-				[accessToken, expiresAt, accountId],
-			);
-		}
+		this.withRetrySync(() => {
+			if (refreshToken) {
+				this.db.run(
+					`UPDATE accounts SET access_token = ?, expires_at = ?, refresh_token = ? WHERE id = ?`,
+					[accessToken, expiresAt, refreshToken, accountId],
+				);
+			} else {
+				this.db.run(
+					`UPDATE accounts SET access_token = ?, expires_at = ? WHERE id = ?`,
+					[accessToken, expiresAt, accountId],
+				);
+			}
+		}, "updateAccountTokens");
 	}
 
 	updateAccountUsage(accountId: string): void {
@@ -115,10 +239,12 @@ export class DatabaseOperations implements StrategyStore, Disposable {
 	}
 
 	markAccountRateLimited(accountId: string, until: number): void {
-		this.db.run(`UPDATE accounts SET rate_limited_until = ? WHERE id = ?`, [
-			until,
-			accountId,
-		]);
+		this.withRetrySync(() => {
+			this.db.run(`UPDATE accounts SET rate_limited_until = ? WHERE id = ?`, [
+				until,
+				accountId,
+			]);
+		}, "markAccountRateLimited");
 	}
 
 	updateAccountRateLimitMeta(
@@ -225,34 +351,36 @@ export class DatabaseOperations implements StrategyStore, Disposable {
 	}
 
 	getAccount(accountId: string): Account | null {
-		const row = this.db
-			.query<AccountRow, [string]>(`
-				SELECT 
-					id,
-					name,
-					provider,
-					api_key,
-					refresh_token,
-					access_token,
-					expires_at,
-					created_at,
-					last_used,
-					request_count,
-					total_requests,
-					rate_limited_until,
-					session_start,
-					session_request_count,
-					COALESCE(account_tier, 1) as account_tier,
-					COALESCE(paused, 0) as paused,
-					rate_limit_reset,
-					rate_limit_status,
-					rate_limit_remaining
-				FROM accounts
-				WHERE id = ?
-			`)
-			.get(accountId);
+		return this.withRetrySync(() => {
+			const row = this.db
+				.query<AccountRow, [string]>(`
+					SELECT
+						id,
+						name,
+						provider,
+						api_key,
+						refresh_token,
+						access_token,
+						expires_at,
+						created_at,
+						last_used,
+						request_count,
+						total_requests,
+						rate_limited_until,
+						session_start,
+						session_request_count,
+						COALESCE(account_tier, 1) as account_tier,
+						COALESCE(paused, 0) as paused,
+						rate_limit_reset,
+						rate_limit_status,
+						rate_limit_remaining
+					FROM accounts
+					WHERE id = ?
+				`)
+				.get(accountId);
 
-		return row ? toAccount(row) : null;
+			return row ? toAccount(row) : null;
+		}, "getAccount");
 	}
 
 	updateAccountRequestCount(accountId: string, count: number): void {
@@ -272,49 +400,55 @@ export class DatabaseOperations implements StrategyStore, Disposable {
 	}
 
 	getRequestPayload(id: string): unknown | null {
-		const row = this.db
-			.query<{ json: string }, [string]>(
-				`SELECT json FROM request_payloads WHERE id = ?`,
-			)
-			.get(id);
+		return this.withRetrySync(() => {
+			const row = this.db
+				.query<{ json: string }, [string]>(
+					`SELECT json FROM request_payloads WHERE id = ?`,
+				)
+				.get(id);
 
-		if (!row) return null;
+			if (!row) return null;
 
-		try {
-			return JSON.parse(row.json);
-		} catch {
-			return null;
-		}
+			try {
+				return JSON.parse(row.json);
+			} catch {
+				return null;
+			}
+		}, "getRequestPayload");
 	}
 
 	listRequestPayloads(limit = 50): Array<{ id: string; json: string }> {
-		return this.db
-			.query<{ id: string; json: string }, [number]>(`
-				SELECT rp.id, rp.json 
-				FROM request_payloads rp
-				JOIN requests r ON rp.id = r.id
-				ORDER BY r.timestamp DESC
-				LIMIT ?
-			`)
-			.all(limit);
+		return this.withRetrySync(() => {
+			return this.db
+				.query<{ id: string; json: string }, [number]>(`
+					SELECT rp.id, rp.json
+					FROM request_payloads rp
+					JOIN requests r ON rp.id = r.id
+					ORDER BY r.timestamp DESC
+					LIMIT ?
+				`)
+				.all(limit);
+		}, "listRequestPayloads");
 	}
 
 	listRequestPayloadsWithAccountNames(
 		limit = 50,
 	): Array<{ id: string; json: string; account_name: string | null }> {
-		return this.db
-			.query<
-				{ id: string; json: string; account_name: string | null },
-				[number]
-			>(`
-				SELECT rp.id, rp.json, a.name as account_name
-				FROM request_payloads rp
-				JOIN requests r ON rp.id = r.id
-				LEFT JOIN accounts a ON r.account_used = a.id
-				ORDER BY r.timestamp DESC
-				LIMIT ?
-			`)
-			.all(limit);
+		return this.withRetrySync(() => {
+			return this.db
+				.query<
+					{ id: string; json: string; account_name: string | null },
+					[number]
+				>(`
+					SELECT rp.id, rp.json, a.name as account_name
+					FROM request_payloads rp
+					JOIN requests r ON rp.id = r.id
+					LEFT JOIN accounts a ON r.account_used = a.id
+					ORDER BY r.timestamp DESC
+					LIMIT ?
+				`)
+				.all(limit);
+		}, "listRequestPayloadsWithAccountNames");
 	}
 
 	pauseAccount(accountId: string): void {
@@ -383,3 +517,5 @@ export { DatabaseFactory } from "./factory";
 // Re-export migrations for convenience
 export { ensureSchema, runMigrations } from "./migrations";
 export { resolveDbPath } from "./paths";
+// Re-export retry utilities for external use
+export { withDatabaseRetry, withDatabaseRetrySync } from "./retry";
