@@ -45,6 +45,11 @@ export function ensureSchema(db: Database): void {
 		`CREATE INDEX IF NOT EXISTS idx_requests_account_used ON requests(account_used)`,
 	);
 
+	// Composite index for the main requests query (timestamp DESC with account_used for JOIN)
+	db.run(
+		`CREATE INDEX IF NOT EXISTS idx_requests_timestamp_account ON requests(timestamp DESC, account_used)`,
+	);
+
 	// Create request_payloads table for storing full request/response data
 	db.run(`
 		CREATE TABLE IF NOT EXISTS request_payloads (

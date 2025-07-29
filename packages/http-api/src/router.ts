@@ -14,6 +14,7 @@ import { createLogsHistoryHandler } from "./handlers/logs-history";
 import {
 	createRequestsDetailHandler,
 	createRequestsSummaryHandler,
+	createRequestPayloadHandler,
 } from "./handlers/requests";
 import { createStatsHandler, createStatsResetHandler } from "./handlers/stats";
 import type { APIContext } from "./types";
@@ -48,6 +49,7 @@ export class APIRouter {
 		const _accountTierHandler = createAccountTierUpdateHandler(dbOps);
 		const requestsSummaryHandler = createRequestsSummaryHandler(db);
 		const requestsDetailHandler = createRequestsDetailHandler(dbOps);
+		const requestPayloadHandler = createRequestPayloadHandler(dbOps);
 		const configHandlers = createConfigHandlers(config);
 		const logsStreamHandler = createLogsStreamHandler();
 		const logsHistoryHandler = createLogsHistoryHandler();
@@ -66,6 +68,11 @@ export class APIRouter {
 		this.handlers.set("GET:/api/requests/detail", (_req, url) => {
 			const limit = parseInt(url.searchParams.get("limit") || "100");
 			return requestsDetailHandler(limit);
+		});
+		this.handlers.set("GET:/api/requests/payload/:id", (_req, url) => {
+			const pathParts = url.pathname.split('/');
+			const requestId = pathParts[pathParts.length - 1];
+			return requestPayloadHandler(requestId);
 		});
 		this.handlers.set("GET:/api/config", () => configHandlers.getConfig());
 		this.handlers.set("GET:/api/config/strategy", () =>

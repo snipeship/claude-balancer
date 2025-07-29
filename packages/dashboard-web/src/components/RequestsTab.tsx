@@ -28,14 +28,13 @@ export function RequestsTab() {
 
 	const loadRequests = useCallback(async () => {
 		try {
-			// Only fetch detailed data - extract summary info from it
+			// Use the optimized detail handler that returns summary data without full payloads
 			const detailData = await api.getRequestsDetail(200);
 			setRequests(detailData);
 
-			// Extract summary data from the detailed requests (now included in response)
+			// Extract summary data from the response
 			const summaryMap = new Map<string, RequestSummary>();
 			detailData.forEach((request: any) => {
-				// Summary data is now included in the response from the optimized detail handler
 				if (request.summary) {
 					summaryMap.set(request.id, request.summary);
 				}
