@@ -32,6 +32,8 @@ RUN mkdir -p /app/data && chown ccflare:ccflare /app/data
 
 # Switch to non-root user
 USER ccflare
+# Set database path to persistent volume mount
+ENV ccflare_DB_PATH=/app/data/ccflare.db
 
 # Expose port
 EXPOSE 8080
