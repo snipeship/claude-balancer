@@ -28,16 +28,17 @@ export function RequestsTab() {
 
 	const loadRequests = useCallback(async () => {
 		try {
-			const [detailData, summaryData] = await Promise.all([
-				api.getRequestsDetail(200),
-				api.getRequestsSummary(200),
-			]);
+			// Only fetch detailed data - extract summary info from it
+			const detailData = await api.getRequestsDetail(200);
 			setRequests(detailData);
 
-			// Create a map of summaries by ID
+			// Extract summary data from the detailed requests (now included in response)
 			const summaryMap = new Map<string, RequestSummary>();
-			summaryData.forEach((summary) => {
-				summaryMap.set(summary.id, summary);
+			detailData.forEach((request: any) => {
+				// Summary data is now included in the response from the optimized detail handler
+				if (request.summary) {
+					summaryMap.set(request.id, request.summary);
+				}
 			});
 			setSummaries(summaryMap);
 
