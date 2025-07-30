@@ -18,11 +18,11 @@ export function getInstance(): DatabaseOperations {
 	if (!instance) {
 		// Extract database configuration from runtime config
 		const dbConfig: DatabaseConfig | undefined = runtimeConfig?.database ? {
-			walMode: runtimeConfig.database.walMode,
-			busyTimeoutMs: runtimeConfig.database.busyTimeoutMs,
-			cacheSize: runtimeConfig.database.cacheSize,
-			synchronous: runtimeConfig.database.synchronous,
-			mmapSize: runtimeConfig.database.mmapSize,
+			...(runtimeConfig.database.walMode !== undefined && { walMode: runtimeConfig.database.walMode }),
+			...(runtimeConfig.database.busyTimeoutMs !== undefined && { busyTimeoutMs: runtimeConfig.database.busyTimeoutMs }),
+			...(runtimeConfig.database.cacheSize !== undefined && { cacheSize: runtimeConfig.database.cacheSize }),
+			...(runtimeConfig.database.synchronous !== undefined && { synchronous: runtimeConfig.database.synchronous }),
+			...(runtimeConfig.database.mmapSize !== undefined && { mmapSize: runtimeConfig.database.mmapSize }),
 		} : undefined;
 
 		const retryConfig: DatabaseRetryConfig | undefined = runtimeConfig?.database?.retry;

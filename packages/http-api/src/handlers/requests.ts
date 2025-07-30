@@ -1,5 +1,6 @@
 import type { Database } from "bun:sqlite";
 import type { DatabaseOperations } from "@ccflare/database";
+import { validateString } from "@ccflare/core";
 import { jsonResponse } from "@ccflare/http-common";
 import type { RequestResponse } from "../types";
 
@@ -100,12 +101,31 @@ export function createRequestsDetailHandler(dbOps: DatabaseOperations) {
  */
 export function createRequestPayloadHandler(dbOps: DatabaseOperations) {
 	return (requestId: string): Response => {
+		// Validate requestId parameter
+		try {
+			validateString(requestId, 'requestId', {
+				required: true,
+				minLength: 1,
+				maxLength: 255,
+				pattern: /^[a-zA-Z0-9\-_]+$/
+			});
+		} catch (error) {
+			return jsonResponse(
+				{ error: 'Invalid request ID format' },
+				400
+			);
+		}
+
 		const payload = dbOps.getRequestPayload(requestId);
 
 		if (!payload) {
-			return new Response("Request not found", { status: 404 });
+			return jsonResponse(
+				{ error: 'Request not found' },
+				404
+			);
 		}
 
+		// The payload is already parsed by the repository, return it directly
 		return jsonResponse(payload);
 	};
 }
