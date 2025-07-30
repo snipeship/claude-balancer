@@ -125,7 +125,7 @@ List all configured accounts with their current status.
     "rateLimitStatus": "allowed_warning (5m)",
     "rateLimitReset": "2024-12-17T10:30:00.000Z",
     "rateLimitRemaining": 100,
-    "sessionInfo": "Active: 25 reqs"
+    "sessionInfo": "Session: 25 requests"
   }
 ]
 ```
@@ -135,19 +135,20 @@ List all configured accounts with their current status.
 curl http://localhost:8080/api/accounts
 ```
 
-#### POST /api/accounts
+---
 
-Add a new account using OAuth flow.
+### OAuth Flow
 
-**Step 1: Initialize OAuth**
+#### POST /api/oauth/init
+
+Initialize OAuth flow for adding a new account.
 
 **Request:**
 ```json
 {
   "name": "myaccount",
-  "mode": "max",  // "max" or "console"
-  "tier": 5,      // 1, 5, or 20
-  "step": "init"
+  "mode": "max",  // "max" or "console" (default: "max")
+  "tier": 5       // 1, 5, or 20 (default: 1)
 }
 ```
 
@@ -156,18 +157,27 @@ Add a new account using OAuth flow.
 {
   "success": true,
   "authUrl": "https://console.anthropic.com/oauth/authorize?...",
+  "sessionId": "uuid-here",
   "step": "authorize"
 }
 ```
 
-**Step 2: Complete OAuth**
+**Example:**
+```bash
+curl -X POST http://localhost:8080/api/oauth/init \
+  -H "Content-Type: application/json" \
+  -d '{"name": "myaccount", "mode": "max", "tier": 5}'
+```
+
+#### POST /api/oauth/callback
+
+Complete OAuth flow after user authorization.
 
 **Request:**
 ```json
 {
-  "name": "myaccount",
-  "code": "authorization-code-from-oauth",
-  "step": "callback"
+  "sessionId": "uuid-from-init-response",
+  "code": "authorization-code-from-oauth"
 }
 ```
 
@@ -183,16 +193,14 @@ Add a new account using OAuth flow.
 
 **Example:**
 ```bash
-# Step 1: Initialize
-curl -X POST http://localhost:8080/api/accounts \
+curl -X POST http://localhost:8080/api/oauth/callback \
   -H "Content-Type: application/json" \
-  -d '{"name": "myaccount", "mode": "max", "tier": 5, "step": "init"}'
-
-# Step 2: After OAuth authorization
-curl -X POST http://localhost:8080/api/accounts \
-  -H "Content-Type: application/json" \
-  -d '{"name": "myaccount", "code": "auth-code", "step": "callback"}'
+  -d '{"sessionId": "uuid-here", "code": "auth-code"}'
 ```
+
+---
+
+### Account Management
 
 #### DELETE /api/accounts/:accountId
 
@@ -297,6 +305,7 @@ Get overall usage statistics.
   "avgResponseTime": 1250.5,
   "totalTokens": 1500000,
   "totalCostUsd": 125.50,
+  "avgTokensPerSecond": null,
   "topModels": [
     {"model": "claude-3-opus-20240229", "count": 3000},
     {"model": "claude-3-sonnet-20240229", "count": 2000}
@@ -359,7 +368,9 @@ Get recent request summary.
     "outputTokens": 100,
     "cacheReadInputTokens": 0,
     "cacheCreationInputTokens": 0,
-    "costUsd": 0.0125
+    "costUsd": 0.0125,
+    "agentUsed": null,
+    "tokensPerSecond": null
   }
 ]
 ```
@@ -371,7 +382,7 @@ curl "http://localhost:8080/api/requests?limit=100"
 
 #### GET /api/requests/detail
 
-Get detailed request information including payloads.
+Get detailed request information including payloads. Request and response bodies are base64-encoded to handle binary data and special characters.
 
 **Query Parameters:**
 - `limit` - Number of requests to return (default: 100)
@@ -399,10 +410,12 @@ Get detailed request information including payloads.
       },
       "meta": {
         "accountId": "uuid",
+        "accountName": "account1",
+        "retry": 0,
         "timestamp": 1234567890,
         "success": true,
-        "isStream": false,
-        "bodyTruncated": false
+        "rateLimited": false,
+        "accountsAttempted": 1
       }
     }
   }
@@ -471,7 +484,7 @@ Update load balancing strategy.
 }
 ```
 
-**Available Strategy:**
+**Available Strategies:**
 - `session` - Session-based routing that maintains 5-hour sessions with individual accounts to avoid rate limits and account bans
 
 **⚠️ WARNING:** Only the session strategy is supported. Other strategies have been removed as they can trigger Claude's anti-abuse systems.
@@ -489,12 +502,7 @@ List all available load balancing strategies.
 
 **Response:**
 ```json
-[
-  {
-    "name": "session",
-    "description": "Session-based routing for safe account usage"
-  }
-]
+["session"]
 ```
 
 **Example:**
@@ -515,17 +523,25 @@ Get detailed analytics data.
 - `accounts` - Filter by account names (comma-separated list)
 - `models` - Filter by model names (comma-separated list)
 - `status` - Filter by request status: `all`, `success`, `error` (default: `all`)
+- `mode` - Display mode: `normal`, `cumulative` (default: `normal`). Cumulative mode shows running totals over time
+- `modelBreakdown` - Include per-model time series data: `true`, `false` (default: `false`)
 
 **Response:**
 ```json
 {
+  "meta": {
+    "range": "24h",
+    "bucket": "1h",
+    "cumulative": false
+  },
   "totals": {
     "requests": 5000,
     "successRate": 98.5,
     "activeAccounts": 4,
     "avgResponseTime": 1250.5,
     "totalTokens": 1500000,
-    "totalCostUsd": 125.50
+    "totalCostUsd": 125.50,
+    "avgTokensPerSecond": null
   },
   "timeSeries": [
     {
@@ -536,7 +552,8 @@ Get detailed analytics data.
       "successRate": 98,
       "errorRate": 2,
       "cacheHitRate": 15,
-      "avgResponseTime": 1200
+      "avgResponseTime": 1200,
+      "avgTokensPerSecond": null
     }
   ],
   "tokenBreakdown": {
@@ -552,14 +569,17 @@ Get detailed analytics data.
     {"name": "account1", "requests": 2500, "successRate": 99}
   ],
   "costByModel": [
-    {"model": "claude-3-opus-20240229", "costUsd": 100.50, "requests": 3000}
+    {"model": "claude-3-opus-20240229", "costUsd": 100.50, "requests": 3000, "totalTokens": 1200000}
   ],
   "modelPerformance": [
     {
       "model": "claude-3-opus-20240229",
       "avgResponseTime": 1300,
       "p95ResponseTime": 2500,
-      "errorRate": 1.5
+      "errorRate": 1.5,
+      "avgTokensPerSecond": null,
+      "minTokensPerSecond": null,
+      "maxTokensPerSecond": null
     }
   ]
 }
@@ -578,6 +598,92 @@ curl "http://localhost:8080/api/analytics?range=24h&models=claude-3-opus-2024022
 
 # Combined filters
 curl "http://localhost:8080/api/analytics?range=7d&accounts=premium1,premium2&models=claude-3-opus-20240229&status=error"
+```
+
+---
+
+### Agent Management
+
+#### GET /api/agents
+
+List all available agents with their preferences.
+
+**Response:**
+```json
+{
+  "agents": [
+    {
+      "id": "agent-uuid",
+      "name": "code-reviewer",
+      "description": "Reviews code for quality and best practices",
+      "model": "claude-3-5-sonnet-20241022",
+      "source": "global",
+      "workspace": null
+    }
+  ],
+  "globalAgents": [...],
+  "workspaceAgents": [...],
+  "workspaces": [
+    {
+      "name": "my-workspace",
+      "path": "/path/to/workspace"
+    }
+  ]
+}
+```
+
+**Example:**
+```bash
+curl http://localhost:8080/api/agents
+```
+
+#### POST /api/agents/:agentId/preference
+
+Update model preference for a specific agent.
+
+**Request:**
+```json
+{
+  "model": "claude-3-5-sonnet-20241022"
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "agentId": "agent-uuid",
+  "model": "claude-3-5-sonnet-20241022"
+}
+```
+
+**Example:**
+```bash
+curl -X POST http://localhost:8080/api/agents/agent-uuid/preference \
+  -H "Content-Type: application/json" \
+  -d '{"model": "claude-3-5-sonnet-20241022"}'
+```
+
+#### GET /api/workspaces
+
+List all available workspaces with agent counts.
+
+**Response:**
+```json
+{
+  "workspaces": [
+    {
+      "name": "my-workspace",
+      "path": "/path/to/workspace",
+      "agentCount": 5
+    }
+  ]
+}
+```
+
+**Example:**
+```bash
+curl http://localhost:8080/api/workspaces
 ```
 
 ---

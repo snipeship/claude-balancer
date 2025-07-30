@@ -1,6 +1,7 @@
 import { promises as fs } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { TIME_CONSTANTS } from "./constants";
 
 export interface TokenBreakdown {
 	inputTokens?: number;
@@ -112,7 +113,7 @@ class PriceCatalogue {
 
 	private getCacheDurationMs(): number {
 		const hours = Number(process.env.CF_PRICING_REFRESH_HOURS) || 24;
-		return hours * 60 * 60 * 1000;
+		return hours * TIME_CONSTANTS.HOUR;
 	}
 
 	private async ensureCacheDir(): Promise<void> {
@@ -218,7 +219,7 @@ export function setPricingLogger(logger: Logger): void {
  * @returns Cost in dollars per token (NOT per million)
  * @throws If model or cost type is unknown
  */
-export async function getCostRate(
+async function getCostRate(
 	modelId: string,
 	kind: "input" | "output" | "cache_read" | "cache_write",
 ): Promise<number> {

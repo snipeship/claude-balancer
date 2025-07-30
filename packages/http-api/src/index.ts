@@ -1,14 +1,8 @@
-// Export types
-
-export * from "./handlers/accounts";
-export * from "./handlers/config";
-
-// Export individual handlers for direct use
-export * from "./handlers/health";
-export * from "./handlers/requests";
-export * from "./handlers/stats";
-// Export router
+// Export router - the main public API
 export { APIRouter } from "./router";
+
+// Export types
 export * from "./types";
+
 // Export utilities
 export * from "./utils/http-error";

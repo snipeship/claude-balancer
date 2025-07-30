@@ -25,11 +25,8 @@ bun install
 # Start ccflare (TUI + Server)
 bun run ccflare
 
-# Configure Claude SDK (local development)
+# Configure Claude SDK
 export ANTHROPIC_BASE_URL=http://localhost:8080
-
-# Windows
-$env:ANTHROPIC_BASE_URL="http://localhost:8080"
 ```
 
 ## Features
@@ -50,33 +47,10 @@ $env:ANTHROPIC_BASE_URL="http://localhost:8080"
 - REST API for automation
 
 ### 🔒 Production Ready
-- Optional API key authentication for remote hosting
 - Automatic failover between accounts
 - OAuth token refresh handling
 - SQLite database for persistence
 - Configurable retry logic
-
-## Security & Remote Hosting
-
-### Local Development (No Authentication)
-```bash
-# No API key needed for localhost
-export ANTHROPIC_BASE_URL=http://localhost:8080
-```
-
-### Remote/Production Deployment (With Authentication)
-```bash
-# Set API key for security
-export API_KEY=your-secret-key-here
-
-# Configure clients to use authenticated endpoint
-export ANTHROPIC_BASE_URL=http://yourserver.com/your-secret-key-here
-```
-
-**Docker Example:**
-```bash
-docker run -e API_KEY=my-secret-key -p 8080:8080 ccflare
-```
 
 ## Documentation
 

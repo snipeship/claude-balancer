@@ -1,6 +1,7 @@
 import {
 	Activity,
 	BarChart3,
+	Bot,
 	FileText,
 	GitBranch,
 	LayoutDashboard,
@@ -28,6 +29,7 @@ const navItems: NavItem[] = [
 	{ label: "Analytics", icon: BarChart3, value: "analytics" },
 	{ label: "Requests", icon: Activity, value: "requests" },
 	{ label: "Accounts", icon: Users, value: "accounts" },
+	{ label: "Agents", icon: Bot, value: "agents" },
 	{ label: "Logs", icon: FileText, value: "logs" },
 ];
 

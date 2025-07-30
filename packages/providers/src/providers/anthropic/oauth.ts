@@ -1,12 +1,13 @@
+import { OAuthError } from "@ccflare/core";
 import type {
-	OAuthConfig,
 	OAuthProvider,
+	OAuthProviderConfig,
 	PKCEChallenge,
 	TokenResult,
 } from "../../types";
 
 export class AnthropicOAuthProvider implements OAuthProvider {
-	getOAuthConfig(mode: "console" | "max" = "console"): OAuthConfig {
+	getOAuthConfig(mode: "console" | "max" = "console"): OAuthProviderConfig {
 		const baseUrl =
 			mode === "console"
 				? "https://console.anthropic.com"
@@ -22,7 +23,7 @@ export class AnthropicOAuthProvider implements OAuthProvider {
 		};
 	}
 
-	generateAuthUrl(config: OAuthConfig, pkce: PKCEChallenge): string {
+	generateAuthUrl(config: OAuthProviderConfig, pkce: PKCEChallenge): string {
 		const url = new URL(config.authorizeUrl);
 		url.searchParams.set("code", "true");
 		url.searchParams.set("client_id", config.clientId);
@@ -38,7 +39,7 @@ export class AnthropicOAuthProvider implements OAuthProvider {
 	async exchangeCode(
 		code: string,
 		verifier: string,
-		config: OAuthConfig,
+		config: OAuthProviderConfig,
 	): Promise<TokenResult> {
 		const splits = code.split("#");
 		const response = await fetch(config.tokenUrl, {
@@ -55,7 +56,21 @@ export class AnthropicOAuthProvider implements OAuthProvider {
 		});
 
 		if (!response.ok) {
-			throw new Error(`Exchange failed: ${response.statusText}`);
+			let errorDetails: { error?: string; error_description?: string } | null =
+				null;
+			try {
+				errorDetails = await response.json();
+			} catch {
+				// Failed to parse error response
+			}
+
+			const errorMessage =
+				errorDetails?.error_description ||
+				errorDetails?.error ||
+				response.statusText ||
+				"OAuth token exchange failed";
+
+			throw new OAuthError(errorMessage, "anthropic", errorDetails?.error);
 		}
 
 		const json = (await response.json()) as {

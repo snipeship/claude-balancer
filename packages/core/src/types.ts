@@ -1,5 +1,4 @@
-import type { RequestMeta } from "@ccflare/types";
-import type { StrategyStore } from "./strategy-store";
+import type { RequestMeta, StrategyStore } from "@ccflare/types";
 
 // Database row types that match the actual database schema
 export type AccountRow = {

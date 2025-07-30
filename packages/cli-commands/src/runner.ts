@@ -10,6 +10,7 @@ import {
 	removeAccountWithConfirmation,
 	resumeAccount,
 } from "./commands/account";
+import { analyzePerformance } from "./commands/analyze";
 import { getHelpText } from "./commands/help";
 import { clearRequestHistory, resetAllStats } from "./commands/stats";
 
@@ -163,6 +164,12 @@ export async function runCli(argv: string[]): Promise<void> {
 				if (!result.success) {
 					process.exit(1);
 				}
+				break;
+			}
+
+			case "analyze": {
+				const db = dbOps.getDatabase();
+				analyzePerformance(db);
 				break;
 			}
 

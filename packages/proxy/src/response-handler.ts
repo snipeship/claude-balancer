@@ -1,6 +1,20 @@
-import type { Account } from "@ccflare/core";
-import type { ProxyContext } from "./proxy";
+import type { Account } from "@ccflare/types";
+import type { ProxyContext } from "./handlers";
 import type { ChunkMessage, EndMessage, StartMessage } from "./worker-messages";
+
+/**
+ * Check if a response should be considered successful/expected
+ * Treats certain well-known paths that return 404 as expected
+ */
+function isExpectedResponse(path: string, response: Response): boolean {
+	// Any .well-known path returning 404 is expected
+	if (path.startsWith("/.well-known/") && response.status === 404) {
+		return true;
+	}
+
+	// Otherwise use standard HTTP success logic
+	return response.ok;
+}
 
 export interface ResponseHandlerOptions {
 	requestId: string;
@@ -13,6 +27,7 @@ export interface ResponseHandlerOptions {
 	timestamp: number;
 	retryAttempt: number;
 	failoverAttempts: number;
+	agentUsed?: string | null;
 }
 
 /**
@@ -35,6 +50,7 @@ export async function forwardToClient(
 		timestamp,
 		retryAttempt, // Always 0 in new flow, but kept for message compatibility
 		failoverAttempts,
+		agentUsed,
 	} = options;
 
 	// Prepare objects once for serialisation
@@ -59,6 +75,7 @@ export async function forwardToClient(
 		responseHeaders: responseHeadersObj,
 		isStream,
 		providerName: ctx.provider.name,
+		agentUsed: agentUsed || null,
 		retryAttempt,
 		failoverAttempts,
 	};
@@ -92,7 +109,7 @@ export async function forwardToClient(
 				const endMsg: EndMessage = {
 					type: "end",
 					requestId,
-					success: analyticsClone.ok,
+					success: isExpectedResponse(path, analyticsClone),
 				};
 				ctx.usageWorker.postMessage(endMsg);
 			} catch (err) {
@@ -124,7 +141,7 @@ export async function forwardToClient(
 					bodyBuf.byteLength > 0
 						? Buffer.from(bodyBuf).toString("base64")
 						: null,
-				success: clone.ok,
+				success: isExpectedResponse(path, clone),
 			};
 			ctx.usageWorker.postMessage(endMsg);
 		} catch (err) {

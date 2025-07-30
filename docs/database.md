@@ -57,15 +57,33 @@ erDiagram
         INTEGER completion_tokens "Output token count"
         INTEGER total_tokens "Total token count"
         REAL cost_usd "Estimated cost in USD"
+        REAL output_tokens_per_second "Output generation speed"
         INTEGER input_tokens "Detailed input tokens"
         INTEGER cache_read_input_tokens "Cached input tokens read"
         INTEGER cache_creation_input_tokens "Cached input tokens created"
         INTEGER output_tokens "Detailed output tokens"
+        TEXT agent_used "Agent ID if request used an agent"
     }
     
     request_payloads {
         TEXT id PK "Request ID (foreign key)"
         TEXT json "Full request/response JSON payload"
+    }
+    
+    oauth_sessions {
+        TEXT id PK "Session ID"
+        TEXT account_name "Account name for OAuth flow"
+        TEXT verifier "PKCE verifier for security"
+        TEXT mode "OAuth mode (console or max)"
+        INTEGER tier "Account tier (1, 5, or 20)"
+        INTEGER created_at "Session creation timestamp"
+        INTEGER expires_at "Session expiration timestamp"
+    }
+    
+    agent_preferences {
+        TEXT agent_id PK "Agent identifier"
+        TEXT model "Preferred model for the agent"
+        INTEGER updated_at "Last update timestamp"
     }
     
     accounts ||--o{ requests : "handles"
@@ -127,11 +145,20 @@ The `requests` table logs all proxied requests for analytics and debugging.
 | `cache_read_input_tokens` | INTEGER | DEFAULT 0* | Tokens read from cache |
 | `cache_creation_input_tokens` | INTEGER | DEFAULT 0* | Tokens written to cache |
 | `output_tokens` | INTEGER | DEFAULT 0* | Detailed output token count |
+| `output_tokens_per_second` | REAL | NULL* | Output generation speed (tokens/sec) |
+| `agent_used` | TEXT | NULL* | Agent ID if request used an agent |
 
 *Note: Columns marked with * are added via migrations and may not exist in databases created before the migration was introduced.
 
 **Indexes:**
 - `idx_requests_timestamp` on `timestamp DESC` for efficient time-based queries
+- `idx_requests_timestamp_account` on `timestamp DESC, account_used` for time-based account queries
+- `idx_requests_model_timestamp` on `model, timestamp DESC` WHERE `model IS NOT NULL` for model analytics
+- `idx_requests_success_timestamp` on `success, timestamp DESC` for success rate calculations
+- `idx_requests_account_timestamp` on `account_used, timestamp DESC` for per-account analytics
+- `idx_requests_cost_model` on `cost_usd, model, timestamp DESC` WHERE `cost_usd > 0 AND model IS NOT NULL` for cost analysis
+- `idx_requests_response_time` on `model, response_time_ms` WHERE `response_time_ms IS NOT NULL AND model IS NOT NULL` for response time analysis
+- `idx_requests_tokens` on `timestamp DESC, total_tokens` WHERE `total_tokens > 0` for token usage analysis
 
 ### request_payloads Table
 
@@ -144,6 +171,45 @@ The `request_payloads` table stores full request and response bodies for detaile
 
 **Foreign Key Constraints:**
 - `id` references `requests(id)` with `ON DELETE CASCADE`
+
+### oauth_sessions Table
+
+The `oauth_sessions` table stores temporary OAuth PKCE (Proof Key for Code Exchange) data for secure authentication flows.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | TEXT | PRIMARY KEY | Session identifier (UUID) |
+| `account_name` | TEXT | NOT NULL | Name for the account being created |
+| `verifier` | TEXT | NOT NULL | PKCE code verifier for security |
+| `mode` | TEXT | NOT NULL | OAuth mode ('console' or 'max') |
+| `tier` | INTEGER | DEFAULT 1 | Account tier (1=Free, 5=Pro, 20=Team) |
+| `created_at` | INTEGER | NOT NULL | Unix timestamp when session was created |
+| `expires_at` | INTEGER | NOT NULL | Unix timestamp when session expires |
+
+**Indexes:**
+- `idx_oauth_sessions_expires` on `expires_at` for efficient cleanup of expired sessions
+
+### agent_preferences Table
+
+The `agent_preferences` table stores user-defined model preferences for specific agents.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `agent_id` | TEXT | PRIMARY KEY | Unique identifier for the agent |
+| `model` | TEXT | NOT NULL | Preferred model for this agent |
+| `updated_at` | INTEGER | NOT NULL | Unix timestamp of last update |
+
+### strategies Table (Not Yet Implemented)
+
+**Note**: The codebase references a `strategies` table through the `StrategyRepository`, but this table is not currently created in the schema. When implemented, it would store:
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `name` | TEXT | PRIMARY KEY | Strategy identifier |
+| `config` | TEXT | NOT NULL | JSON configuration for the strategy |
+| `updated_at` | INTEGER | NOT NULL | Unix timestamp of last update |
+
+This table would be used for storing custom load balancing strategies and routing configurations.
 
 ## Migration System
 
@@ -167,6 +233,9 @@ Key migrations include:
 - Session tracking (`session_start`, `session_request_count`)
 - Account tiers and pausing
 - Token usage tracking for cost analysis
+- Output tokens per second tracking
+- Agent usage tracking
+- Performance indexes for common query patterns
 
 ## Database Architecture
 
@@ -174,6 +243,7 @@ Key migrations include:
 
 #### DatabaseOperations
 The main database access layer that implements both `StrategyStore` and `Disposable` interfaces:
+- Uses Repository Pattern for clean separation of concerns
 - Manages direct SQLite connections via Bun's native SQLite bindings
 - Handles all CRUD operations for accounts and requests
 - Supports runtime configuration injection for session management
@@ -191,6 +261,21 @@ Asynchronous write queue for non-blocking database operations:
 - Processes queue every 100ms or immediately when jobs are added
 - Gracefully flushes pending operations on shutdown
 - Prevents blocking the main thread during heavy write loads
+
+#### Repository Pattern Architecture
+The database uses a clean Repository Pattern with the following repositories:
+- **AccountRepository**: Manages all account-related operations
+- **RequestRepository**: Handles request logging and analytics queries
+- **OAuthRepository**: Manages OAuth session storage and cleanup
+- **StrategyRepository**: Handles strategy configuration storage (pending table implementation)
+- **StatsRepository**: Provides consolidated statistics and analytics
+- **AgentPreferenceRepository**: Manages agent-specific model preferences
+
+Each repository:
+- Extends a common `BaseRepository` class for shared functionality
+- Encapsulates SQL queries and data transformations
+- Provides type-safe interfaces for database operations
+- Handles data mapping between database rows and application models
 
 ### Dependency Injection Integration
 The database integrates with the DI container:
@@ -286,30 +371,61 @@ Current indexes optimize for:
 - **Primary key lookups**: Automatic indexes on all primary keys
 - **Foreign key joins**: Automatic indexes for referential integrity
 
-Additional indexes to consider for production:
-```sql
--- For account selection performance
-CREATE INDEX idx_accounts_active ON accounts(paused, rate_limited_until);
+### Performance Indexes
 
--- For request analysis by account
-CREATE INDEX idx_requests_account_timestamp ON requests(account_used, timestamp);
-```
+The database includes comprehensive performance indexes that are automatically added during initialization:
+
+**Account Table Indexes:**
+- `idx_accounts_paused` on `paused` WHERE `paused = 0` - For quickly finding active accounts
+- `idx_accounts_name` on `name` - For account name lookups in analytics joins
+- `idx_accounts_rate_limited` on `rate_limited_until` WHERE `rate_limited_until IS NOT NULL` - For rate limit checks
+- `idx_accounts_session` on `session_start, session_request_count` WHERE `session_start IS NOT NULL` - For session management
+- `idx_accounts_request_count` on `request_count DESC, last_used` - For account ordering in load balancer
+
+**Request Table Indexes:**
+- `idx_requests_timestamp` on `timestamp DESC` - For time-based queries
+- `idx_requests_timestamp_account` on `timestamp DESC, account_used` - For time-based account queries
+- `idx_requests_model_timestamp` on `model, timestamp DESC` WHERE `model IS NOT NULL` - For model analytics
+- `idx_requests_success_timestamp` on `success, timestamp DESC` - For success rate calculations
+- `idx_requests_account_timestamp` on `account_used, timestamp DESC` - For per-account analytics
+- `idx_requests_cost_model` on `cost_usd, model, timestamp DESC` WHERE `cost_usd > 0 AND model IS NOT NULL` - For cost analysis
+- `idx_requests_response_time` on `model, response_time_ms` WHERE `response_time_ms IS NOT NULL AND model IS NOT NULL` - For response time analysis (p95 calculations)
+- `idx_requests_tokens` on `timestamp DESC, total_tokens` WHERE `total_tokens > 0` - For token usage analysis
+
+**OAuth Sessions Table Indexes:**
+- `idx_oauth_sessions_expires` on `expires_at` - For efficient cleanup of expired sessions
 
 ## Performance Considerations
 
 ### SQLite Optimization
 
-1. **WAL Mode**: Consider enabling Write-Ahead Logging for better concurrency:
+The database is automatically configured with the following optimizations:
+
+1. **WAL Mode**: Write-Ahead Logging is enabled by default for better concurrency:
 ```sql
 PRAGMA journal_mode = WAL;
 ```
 
-2. **Connection Pooling**: The current implementation uses a single connection. For high-load scenarios, consider connection pooling.
+2. **Busy Timeout**: Set to 5 seconds to handle concurrent access:
+```sql
+PRAGMA busy_timeout = 5000;
+```
 
-3. **Query Optimization**:
-   - Use prepared statements (already implemented via Bun's query API)
-   - Batch operations where possible
-   - Limit result sets with appropriate `LIMIT` clauses
+3. **Synchronous Mode**: Set to NORMAL for better performance while maintaining safety:
+```sql
+PRAGMA synchronous = NORMAL;
+```
+
+4. **Query Optimization**:
+   - Prepared statements are used throughout via Bun's query API
+   - Comprehensive indexing strategy based on actual query patterns
+   - Partial indexes with WHERE clauses for efficient filtering
+
+5. **Periodic Optimization**: The database supports an `optimize()` method that runs:
+```sql
+PRAGMA optimize;
+PRAGMA wal_checkpoint(PASSIVE);
+```
 
 ### Data Growth Management
 
@@ -341,12 +457,33 @@ DELETE FROM request_payloads WHERE id NOT IN (SELECT id FROM requests);
 - `resetAccountSession(accountId, timestamp)`: Reset session counters
 
 #### Request Tracking
-- `saveRequest(id, method, path, ...)`: Log request with full metadata
+- `saveRequestMeta(id, method, path, accountUsed, statusCode, timestamp?)`: Save basic request metadata
+- `saveRequest(id, method, path, ...)`: Log request with full metadata including usage and agent info
 - `updateRequestUsage(requestId, usage)`: Update token usage after request completion
 - `saveRequestPayload(id, data)`: Store request/response JSON
 - `getRequestPayload(id)`: Retrieve specific payload
 - `listRequestPayloads(limit?)`: List recent payloads
 - `listRequestPayloadsWithAccountNames(limit?)`: List payloads with account names
+
+#### OAuth Session Management
+- `createOAuthSession(sessionId, accountName, verifier, mode, tier, ttlMinutes?)`: Create OAuth session
+- `getOAuthSession(sessionId)`: Retrieve session data
+- `deleteOAuthSession(sessionId)`: Delete specific session
+- `cleanupExpiredOAuthSessions()`: Remove expired sessions
+
+#### Agent Preferences
+- `getAgentPreference(agentId)`: Get model preference for an agent
+- `getAllAgentPreferences()`: List all agent preferences
+- `setAgentPreference(agentId, model)`: Set model preference
+- `deleteAgentPreference(agentId)`: Remove agent preference
+
+#### Analytics and Reporting
+- `getRecentRequests(limit?)`: Get recent request history
+- `getRequestStats(since?)`: Get aggregate request statistics
+- `aggregateStats(rangeMs?)`: Get comprehensive analytics data
+- `getRecentErrors(limit?)`: List recent error messages
+- `getTopModels(limit?)`: Get most used models
+- `getRequestsByAccount(since?)`: Get per-account request breakdown
 
 ## CLI Commands
 
@@ -480,6 +617,13 @@ chmod 600 ccflare.db
 
 8. **Analytics Tables**: Create pre-aggregated tables for common analytics queries.
 
-9. **Connection Pooling**: Implement connection pooling for high-concurrency scenarios.
+9. **Strategies Table**: Implement the `strategies` table that is referenced in the codebase but not yet created in the schema. This table would store:
+   - Strategy configurations for load balancing algorithms
+   - Custom routing rules
+   - Performance tuning parameters
 
-10. **Streaming Backups**: Implement streaming backups to cloud storage providers.
+10. **Connection Pooling**: Implement connection pooling for high-concurrency scenarios.
+
+11. **Streaming Backups**: Implement streaming backups to cloud storage providers.
+
+12. **Request Archival**: Implement automatic archival of old request data to separate tables or external storage.

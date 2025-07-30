@@ -1,3 +1,4 @@
+import { formatCost, formatTimestamp, formatTokens } from "@ccflare/ui-common";
 import { Eye } from "lucide-react";
 import { useState } from "react";
 import type { RequestPayload, RequestSummary } from "../api";
@@ -82,7 +83,7 @@ export function RequestDetailsModal({
 					<DialogDescription className="flex items-center justify-between">
 						<div className="flex items-center gap-2 flex-wrap">
 							<span className="font-mono text-sm">
-								{new Date(request.meta.timestamp).toLocaleString()}
+								{formatTimestamp(request.meta.timestamp)}
 							</span>
 							{statusCode && (
 								<Badge
@@ -100,13 +101,16 @@ export function RequestDetailsModal({
 							{summary?.model && (
 								<Badge variant="secondary">{summary.model}</Badge>
 							)}
+							{summary?.agentUsed && (
+								<Badge variant="secondary">Agent: {summary.agentUsed}</Badge>
+							)}
 							{summary?.totalTokens && (
 								<Badge variant="outline">
-									{summary.totalTokens.toLocaleString()} tokens
+									{formatTokens(summary.totalTokens)} tokens
 								</Badge>
 							)}
 							{summary?.costUsd && summary.costUsd > 0 && (
-								<Badge variant="default">${summary.costUsd.toFixed(4)}</Badge>
+								<Badge variant="default">{formatCost(summary.costUsd)}</Badge>
 							)}
 							{request.meta.rateLimited && (
 								<Badge variant="warning">Rate Limited</Badge>

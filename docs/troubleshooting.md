@@ -24,20 +24,20 @@ This guide helps you diagnose and resolve common issues with ccflare.
 
 **Symptom**: Requests fail with 401 Unauthorized errors
 
-**Error Message**: `Failed to refresh token for account [name]: Unauthorized`
+**Error Message**: `Failed to refresh access token`
 
 **Solutions**:
 1. Check if the access token has expired:
    ```bash
-   bun cli list
+   ccflare --list
    ```
    Look for accounts with expired tokens (expires_at in the past)
 
 2. Refresh the token manually:
    - Remove and re-add the account:
      ```bash
-     bun cli remove <account-name>
-     bun cli add <account-name>
+     ccflare --remove <account-name>
+     ccflare --add-account <account-name>
      ```
 
 3. Verify the refresh token is still valid in your Anthropic console
@@ -58,9 +58,9 @@ This guide helps you diagnose and resolve common issues with ccflare.
 **Symptom**: OAuth authorization fails during account setup
 
 **Error Messages**:
-- `Exchange failed: Bad Request`
+- `Token exchange failed: [error]`
 - `Invalid code_verifier`
-- `Refresh promise not found for account [id]`
+- `Refresh promise not found for account`
 
 **Solutions**:
 1. Ensure you're using the complete authorization code including the state fragment (format: `code#state`)
@@ -74,16 +74,16 @@ This guide helps you diagnose and resolve common issues with ccflare.
 **Symptom**: Automatic token refresh fails
 
 **Error Messages**:
-- `Failed to refresh token for account [name]: Unauthorized`
-- `Failed to refresh token: Exchange failed`
+- `Failed to refresh access token`
+- `Token refresh failed: [error]`
 
 **Solutions**:
 1. Check if the refresh token was revoked in your Anthropic console
 2. Verify the CLIENT_ID environment variable matches your OAuth app
 3. Remove and re-add the account:
    ```bash
-   bun cli remove <account-name>
-   bun cli add <account-name>
+   ccflare --remove <account-name>
+   ccflare --add-account <account-name>
    ```
 4. Check for multiple simultaneous refresh attempts in logs
 
@@ -91,28 +91,20 @@ This guide helps you diagnose and resolve common issues with ccflare.
 
 ### Identifying Rate Limits
 
-ccflare tracks several types of rate limits:
+ccflare detects rate limits through response headers and HTTP status codes:
 
-1. **Hard Rate Limits**: Block account usage entirely
-   - Status codes: `rate_limited`, `blocked`, `queueing_hard`, `payment_required`
+1. **Rate Limited Responses**: 
    - HTTP 429 responses
+   - Rate limit headers in responses
    - Account is marked unavailable for selection
-
-2. **Soft Warnings**: Allow usage but indicate potential limits
-   - Status codes: `allowed_warning`, `queueing_soft`
-   - Account remains available but logged as warning
-   - May become hard limits if usage continues
 
 **How to Check Rate Limit Status**:
 ```bash
 # View account status including rate limits
-bun cli list
+ccflare --list
 
 # Check logs for rate limit messages
 cat /tmp/ccflare-logs/app.log | grep "rate limited"
-
-# Check specific rate limit status codes
-cat /tmp/ccflare-logs/app.log | grep -E "queueing_hard|queueing_soft|allowed_warning"
 
 # View rate limit reset times in the dashboard
 curl http://localhost:8080/api/accounts | jq '.[] | {name, rate_limit_status, rate_limit_reset}'
@@ -128,7 +120,7 @@ curl http://localhost:8080/api/accounts | jq '.[] | {name, rate_limit_status, ra
 **Manual recovery steps**:
 1. Add more accounts to your pool:
    ```bash
-   bun cli add account2
+   ccflare --add-account account2
    ```
 
 2. Check rate limit reset times in the dashboard:
@@ -139,11 +131,15 @@ curl http://localhost:8080/api/accounts | jq '.[] | {name, rate_limit_status, ra
 3. Monitor account-specific rate limits:
    ```bash
    # View rate limit details for each account
-   bun cli list
+   ccflare --list
    # Look for rate_limit_status and rate_limit_reset columns
    ```
 
-Note: Account pausing functionality may be available via direct database updates but is not exposed via CLI commands.
+4. Pause/resume accounts as needed:
+   ```bash
+   ccflare --pause <account-name>
+   ccflare --resume <account-name>
+   ```
 
 ## Connection Problems
 
@@ -154,7 +150,8 @@ Note: Account pausing functionality may be available via direct database updates
 **Error Messages**:
 - `ECONNREFUSED`
 - `ETIMEDOUT`
-- `Error forwarding request`
+- `Failed to forward unauthenticated request`
+- `All accounts failed to proxy the request`
 
 **Solutions**:
 1. Check your internet connection
@@ -205,7 +202,7 @@ export NO_PROXY=localhost,127.0.0.1
 3. Use session-based routing for conversational workloads:
    ```bash
    # Set strategy to session for better performance with conversations
-   bun cli config set lb_strategy session
+   # Session is the default and only supported strategy
    ```
 
 ### High Memory Usage
@@ -220,7 +217,7 @@ export NO_PROXY=localhost,127.0.0.1
 
 2. Clear request history:
    ```bash
-   bun cli clear-history
+   ccflare --clear-history
    ```
 
 3. Restart the server to clear in-memory caches:
@@ -228,6 +225,8 @@ export NO_PROXY=localhost,127.0.0.1
    # Graceful shutdown with Ctrl+C
    # Then restart
    bun start
+   # Or
+   ccflare --serve
    ```
 
 ## Account Management Issues
@@ -239,7 +238,7 @@ export NO_PROXY=localhost,127.0.0.1
 **Check**:
 1. Account status:
    ```bash
-   bun cli list
+   ccflare --list
    # Look for: paused, rate_limited, or expired
    ```
 
@@ -248,7 +247,10 @@ export NO_PROXY=localhost,127.0.0.1
    - Verify session hasn't expired
 
 **Solutions**:
-1. Unpause the account if paused
+1. Resume the account if paused:
+   ```bash
+   ccflare --resume <account-name>
+   ```
 2. Wait for rate limit to reset
 3. Re-add the account if expired
 
@@ -259,11 +261,11 @@ export NO_PROXY=localhost,127.0.0.1
 **Solutions**:
 1. Check current strategy:
    ```bash
-   bun cli config get lb_strategy
+   # Session strategy is the default and only supported strategy
    ```
 
 2. Session strategy behavior:
-   - `session`: Maintains 5-hour sessions with individual accounts
+   - `session`: Maintains 1-hour sessions with individual accounts (default: 3600000ms)
    - This is the only supported strategy to avoid account bans
    - Adjust session_duration_ms if needed
 
@@ -272,9 +274,9 @@ export NO_PROXY=localhost,127.0.0.1
 ### Config File Location
 
 Default locations by platform:
-- **macOS**: `~/Library/Application Support/ccflare/config.json`
-- **Linux**: `~/.config/ccflare/config.json`
-- **Windows**: `%APPDATA%\ccflare\config.json`
+- **macOS**: `~/.config/ccflare/ccflare.json`
+- **Linux**: `~/.config/ccflare/ccflare.json`
+- **Windows**: `%LOCALAPPDATA%\ccflare\ccflare.json` or `%APPDATA%\ccflare\ccflare.json`
 
 ### Invalid Configuration
 
@@ -287,15 +289,15 @@ Default locations by platform:
 **Solutions**:
 1. Validate JSON syntax:
    ```bash
-   cat ~/.config/ccflare/config.json | jq .
+   cat ~/.config/ccflare/ccflare.json | jq .
    ```
 
 2. Reset to defaults:
    ```bash
    # Backup current config
-   cp ~/.config/ccflare/config.json ~/.config/ccflare/config.backup.json
+   cp ~/.config/ccflare/ccflare.json ~/.config/ccflare/config.backup.json
    # Remove corrupted config
-   rm ~/.config/ccflare/config.json
+   rm ~/.config/ccflare/ccflare.json
    # Restart server to create new config
    bun start
    ```
@@ -324,11 +326,8 @@ Environment variables override config file settings:
 **Solutions**:
 1. Check database file permissions:
    ```bash
-   # macOS
-   ls -la ~/Library/Application\ Support/ccflare/ccflare.db
-   
-   # Linux
-   ls -la ~/.local/share/ccflare/ccflare.db
+   # macOS/Linux
+   ls -la ~/.config/ccflare/ccflare.db
    
    # Windows
    dir %LOCALAPPDATA%\ccflare\ccflare.db
@@ -336,11 +335,11 @@ Environment variables override config file settings:
 
 2. Create the directory if it doesn't exist:
    ```bash
-   # macOS
-   mkdir -p ~/Library/Application\ Support/ccflare
+   # macOS/Linux
+   mkdir -p ~/.config/ccflare
    
-   # Linux
-   mkdir -p ~/.local/share/ccflare
+   # Windows
+   mkdir %LOCALAPPDATA%\ccflare
    ```
 
 3. Use a custom database path:
@@ -363,16 +362,16 @@ Environment variables override config file settings:
 2. If migrations fail repeatedly:
    ```bash
    # Backup existing database
-   cp ~/.local/share/ccflare/ccflare.db ~/.local/share/ccflare/ccflare.db.backup
+   cp ~/.config/ccflare/ccflare.db ~/.config/ccflare/ccflare.db.backup
    
    # Remove and let it recreate
-   rm ~/.local/share/ccflare/ccflare.db
+   rm ~/.config/ccflare/ccflare.db
    bun start
    ```
 
 3. Check for database corruption:
    ```bash
-   sqlite3 ~/.local/share/ccflare/ccflare.db "PRAGMA integrity_check;"
+   sqlite3 ~/.config/ccflare/ccflare.db "PRAGMA integrity_check;"
    ```
 
 ### Async Database Writer Issues
@@ -403,16 +402,18 @@ Environment variables override config file settings:
 1. Ensure only one instance of ccflare is running:
    ```bash
    ps aux | grep "bun start" | grep -v grep
+   ps aux | grep "ccflare --serve" | grep -v grep
    ```
 
 2. Kill any zombie processes:
    ```bash
    pkill -f "bun start"
+   pkill -f "ccflare --serve"
    ```
 
 3. Check for hanging database connections:
    ```bash
-   lsof ~/.local/share/ccflare/ccflare.db
+   lsof ~/.config/ccflare/ccflare.db
    ```
 
 ## Streaming and Analytics Issues
@@ -447,7 +448,7 @@ Environment variables override config file settings:
 1. Check if requests are being recorded:
    ```bash
    # Count recent requests in database
-   sqlite3 ~/.local/share/ccflare/ccflare.db "SELECT COUNT(*) FROM requests WHERE timestamp > strftime('%s', 'now', '-1 hour') * 1000;"
+   sqlite3 ~/.config/ccflare/ccflare.db "SELECT COUNT(*) FROM requests WHERE timestamp > strftime('%s', 'now', '-1 hour') * 1000;"
    ```
 
 2. Verify analytics endpoint:
@@ -458,12 +459,12 @@ Environment variables override config file settings:
 
 3. Clear and rebuild analytics data:
    ```bash
-   bun cli clear-history
+   ccflare --clear-history
    ```
 
 4. Reset account statistics without clearing history:
    ```bash
-   bun cli reset-stats
+   ccflare --reset-stats
    ```
 
 ### Usage Tracking Problems
@@ -494,7 +495,7 @@ Environment variables override config file settings:
 ### Log File Locations
 
 Logs are stored in the system's temporary directory:
-- **Default**: `/tmp/ccflare-logs/app.log` (Unix-like systems)
+- **All platforms**: `/tmp/ccflare-logs/app.log`
 - **Windows**: `%TEMP%\ccflare-logs\app.log`
 
 ### Enabling Debug Mode
@@ -549,22 +550,22 @@ grep "\[Server\]" /tmp/ccflare-logs/app.log
 
 ### Authentication and Token Errors
 
-#### "No active accounts available"
+#### "No active accounts available - forwarding request without authentication"
 **Meaning**: All accounts are either paused, rate-limited, or expired
 
 **Solution**: 
 - Add new accounts or wait for rate limits to reset
-- Check account status: `bun cli list`
+- Check account status: `ccflare --list`
 - Requests will be forwarded without authentication (may fail)
 
-#### "Refresh promise not found for account [id]"
+#### "Refresh promise not found for account"
 **Meaning**: Internal error during token refresh process
 
 **Solution**:
 - Restart the server to clear refresh state
 - Check for concurrent refresh attempts in logs
 
-#### "Failed to refresh token for account [name]: Unauthorized"
+#### "Failed to refresh access token"
 **Meaning**: OAuth refresh token is invalid or revoked
 
 **Solution**:
@@ -573,7 +574,7 @@ grep "\[Server\]" /tmp/ccflare-logs/app.log
 
 ### Request Processing Errors
 
-#### "Provider cannot handle this request path"
+#### "Provider cannot handle path"
 **Meaning**: Request path doesn't match expected Anthropic API patterns
 
 **Solution**: 
@@ -599,14 +600,22 @@ grep "\[Server\]" /tmp/ccflare-logs/app.log
 3. Ensure at least one account has valid credentials
 4. Check for API outages
 
-#### "Error forwarding request"
-**Meaning**: Network or connection error during request forwarding
+#### "Failed to forward unauthenticated request"
+**Meaning**: Request forwarding without authentication failed
 
 **Solutions**:
 1. Check network connectivity
 2. Verify Anthropic API is accessible
 3. Check for proxy configuration issues
 4. Look for timeout errors in logs
+
+#### "Failed to proxy request with account"
+**Meaning**: Error occurred while proxying with a specific account
+
+**Solutions**:
+1. Check the specific account's status
+2. Look for token expiration or rate limits
+3. Verify network connectivity
 
 ### Database Errors
 
@@ -642,7 +651,7 @@ grep "\[Server\]" /tmp/ccflare-logs/app.log
 **Solutions**:
 1. Check if database is accessible
 2. Verify time range parameters
-3. Clear history if data is corrupted: `bun cli clear-history`
+3. Clear history if data is corrupted: `ccflare --clear-history`
 
 ### Configuration Errors
 
@@ -650,7 +659,7 @@ grep "\[Server\]" /tmp/ccflare-logs/app.log
 **Meaning**: JSON syntax error in config file
 
 **Solutions**:
-1. Validate JSON syntax: `cat ~/.config/ccflare/config.json | jq .`
+1. Validate JSON syntax: `cat ~/.config/ccflare/ccflare.json | jq .`
 2. Check for trailing commas or missing quotes
 3. Reset to defaults by deleting config file
 
@@ -806,9 +815,8 @@ Expected response:
 ### Q: How do I backup my accounts?
 
 **A**: The account data is stored in the SQLite database. Backup locations:
-- **macOS**: `~/Library/Application Support/ccflare/ccflare.db`
-- **Linux**: `~/.local/share/ccflare/ccflare.db`
-- **Windows**: `%LOCALAPPDATA%\ccflare\ccflare.db`
+- **macOS/Linux**: `~/.config/ccflare/ccflare.db`
+- **Windows**: `%LOCALAPPDATA%\ccflare\ccflare.db` or `%APPDATA%\ccflare\ccflare.db`
 
 ### Q: What happens during a graceful shutdown?
 
@@ -824,7 +832,7 @@ Expected response:
 
 **A**: Copy these files to the new machine:
 1. Database file (`ccflare.db`)
-2. Config file (`config.json`)
+2. Config file (`ccflare.json`)
 3. Set the same CLIENT_ID environment variable
 4. Ensure Bun is installed on the new machine
 
@@ -834,15 +842,15 @@ Expected response:
 1. Streaming responses are only captured up to 1MB
 2. Database writes are async and may be delayed
 3. Usage data depends on response headers from Anthropic
-4. Check if requests are being recorded: `sqlite3 ccflare.db "SELECT COUNT(*) FROM requests;"`
+4. Check if requests are being recorded: `sqlite3 ~/.config/ccflare/ccflare.db "SELECT COUNT(*) FROM requests;"`
 
 ### Q: How do I handle rate limits effectively?
 
 **A**: Best practices for rate limit handling:
 1. Add multiple accounts to your pool
-2. Maintain proper session duration (default 5 hours)
-3. Monitor rate limit warnings in logs (soft limits)
-4. Set up alerts for hard rate limits
+2. Maintain proper session duration (default 1 hour)
+3. Monitor rate limit warnings in logs
+4. Set up alerts for rate-limited accounts
 5. Consider implementing request queuing in your application
 
 ### Q: Can I use ccflare in production?
@@ -862,7 +870,7 @@ Expected response:
 2. **Rate Limited**: Temporarily unavailable due to rate limits
 3. **Expired Token**: Needs re-authentication
 4. **Session**: Account may have an active session
-5. Check status: `bun cli list`
+5. Check status: `ccflare --list`
 
 ### Q: How do I troubleshoot slow responses?
 
@@ -870,16 +878,16 @@ Expected response:
 1. Check response times in logs or analytics
 2. Verify no accounts are rate limited
 3. Look for retry attempts in logs
-4. Consider switching strategies (session for conversations)
+4. Consider session duration settings
 5. Check network latency to Anthropic API
 6. Monitor database performance
 
-### Q: What's the difference between hard and soft rate limits?
+### Q: What's the difference between running with bun start vs ccflare --serve?
 
-**A**: 
-- **Soft Limits** (`allowed_warning`, `queueing_soft`): Account can still be used but approaching limits
-- **Hard Limits** (`rate_limited`, `blocked`, `queueing_hard`): Account is blocked from use until reset
-- ccflare automatically handles both types and rotates accounts accordingly
+**A**: Both commands start the server:
+- `bun start`: Runs the server using the npm script
+- `ccflare --serve`: Runs the server directly via the CLI binary
+- Both are functionally equivalent
 
 ## Getting Help
 
@@ -903,7 +911,7 @@ When reporting issues, include:
 3. **Configuration** (sanitized):
    ```bash
    # Remove sensitive data before sharing
-   cat ~/.config/ccflare/config.json | jq 'del(.client_id)'
+   cat ~/.config/ccflare/ccflare.json | jq 'del(.client_id)'
    ```
 
 4. **Steps to Reproduce**:
@@ -936,10 +944,10 @@ lsof -i :${PORT:-8080} 2>/dev/null || echo "Port ${PORT:-8080} not in use"
 echo ""
 
 echo "=== Database Info ==="
-if [ -f "$HOME/.local/share/ccflare/ccflare.db" ]; then
-    echo "Database size: $(du -h "$HOME/.local/share/ccflare/ccflare.db" | cut -f1)"
-    echo "Request count: $(sqlite3 "$HOME/.local/share/ccflare/ccflare.db" "SELECT COUNT(*) FROM requests;" 2>/dev/null || echo "Could not query")"
-    echo "Account count: $(sqlite3 "$HOME/.local/share/ccflare/ccflare.db" "SELECT COUNT(*) FROM accounts;" 2>/dev/null || echo "Could not query")"
+if [ -f "$HOME/.config/ccflare/ccflare.db" ]; then
+    echo "Database size: $(du -h "$HOME/.config/ccflare/ccflare.db" | cut -f1)"
+    echo "Request count: $(sqlite3 "$HOME/.config/ccflare/ccflare.db" "SELECT COUNT(*) FROM requests;" 2>/dev/null || echo "Could not query")"
+    echo "Account count: $(sqlite3 "$HOME/.config/ccflare/ccflare.db" "SELECT COUNT(*) FROM accounts;" 2>/dev/null || echo "Could not query")"
 else
     echo "Database not found at default location"
 fi
@@ -955,14 +963,14 @@ echo ""
 
 echo "=== Recent Rate Limits ==="
 if [ -f "/tmp/ccflare-logs/app.log" ]; then
-    grep -E "rate_limited|queueing_hard|queueing_soft" /tmp/ccflare-logs/app.log | tail -10
+    grep -E "rate.?limit" /tmp/ccflare-logs/app.log | tail -10
 else
     echo "Log file not found"
 fi
 echo ""
 
 echo "=== Account Status ==="
-bun cli list 2>/dev/null || echo "Could not get account list"
+ccflare --list 2>/dev/null || echo "Could not get account list"
 echo ""
 
 echo "=== API Health Check ==="
@@ -1019,7 +1027,7 @@ When experiencing issues, check these in order:
 
 2. **Account Status**
    ```bash
-   bun cli list
+   ccflare --list
    ```
 
 3. **Recent Errors**
@@ -1029,7 +1037,7 @@ When experiencing issues, check these in order:
 
 4. **Rate Limits**
    ```bash
-   grep "rate_limited" /tmp/ccflare-logs/app.log | tail -10
+   grep "rate.?limit" /tmp/ccflare-logs/app.log | tail -10
    ```
 
 5. **Network Connectivity**
@@ -1039,19 +1047,19 @@ When experiencing issues, check these in order:
 
 6. **Database Health**
    ```bash
-   sqlite3 ~/.local/share/ccflare/ccflare.db "PRAGMA integrity_check;"
+   sqlite3 ~/.config/ccflare/ccflare.db "PRAGMA integrity_check;"
    ```
 
 ### Common Quick Fixes
 
 | Problem | Quick Fix |
 |---------|-----------|
-| All accounts rate limited | Add more accounts: `bun cli add newaccount` |
-| Token expired | Re-authenticate: `bun cli remove account && bun cli add account` |
+| All accounts rate limited | Add more accounts: `ccflare --add-account newaccount` |
+| Token expired | Re-authenticate: `ccflare --remove account && ccflare --add-account account` |
 | Database locked | Kill duplicate processes: `pkill -f "bun start"` |
 | Port in use | Use different port: `PORT=3000 bun start` |
-| Config corrupted | Reset config: `rm ~/.config/ccflare/config.json` |
-| Analytics missing | Clear history: `bun cli clear-history` |
-| Slow responses | Switch strategy: `bun cli config set lb_strategy session` |
+| Config corrupted | Reset config: `rm ~/.config/ccflare/ccflare.json` |
+| Analytics missing | Clear history: `ccflare --clear-history` |
+| Slow responses | Check session duration settings (default 1 hour) |
 
 Remember: Most issues can be resolved by checking logs, verifying account status, and ensuring proper network connectivity. When in doubt, restart the service with debug logging enabled: `ccflare_DEBUG=1 LOG_LEVEL=DEBUG bun start`

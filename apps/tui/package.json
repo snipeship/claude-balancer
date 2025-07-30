@@ -14,10 +14,12 @@
 	},
 	"dependencies": {
 		"@ccflare/tui-core": "workspace:*",
+		"@ccflare/ui-common": "workspace:*",
 		"@ccflare/database": "workspace:*",
 		"@ccflare/core-di": "workspace:*",
 		"@ccflare/config": "workspace:*",
 		"@ccflare/logger": "workspace:*",
+		"@ccflare/server": "workspace:*",
 		"ink": "^6.0.0",
 		"ink-select-input": "^6.0.0",
 		"ink-spinner": "^5.0.0",

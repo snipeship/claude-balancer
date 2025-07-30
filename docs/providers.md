@@ -9,9 +9,10 @@
 
 ### Key Points
 - All API requests route to `https://api.anthropic.com`
-- OAuth is the preferred authentication method
+- OAuth is the preferred authentication method with PKCE security
 - Recent updates include enhanced streaming response capture for analytics
 - Provider system is extensible for future providers (OpenAI, Gemini, etc.)
+- Default OAuth client ID: `9d1c250a-e61b-44d9-88ed-5944d1962f5e` (configurable via environment or config file)
 
 ## Table of Contents
 - [Overview](#overview)
@@ -59,6 +60,8 @@ class ProviderRegistry {
   getOAuthProvider(name: string): OAuthProvider | undefined
   listProviders(): string[]
   listOAuthProviders(): string[]
+  unregisterProvider(name: string): boolean  // Useful for testing
+  clear(): void  // Clear all providers (useful for testing)
 }
 ```
 
@@ -166,6 +169,12 @@ getOAuthConfig(mode: "console" | "max" = "console"): OAuthConfig {
 - **max mode**: Uses Claude Code via claude.ai for enhanced capabilities
 - Both modes use the same API endpoint (api.anthropic.com) for actual requests
 
+**Client ID Configuration:**
+The OAuth client ID can be configured in multiple ways (in order of precedence):
+1. Config file: `client_id` field
+2. Environment variable: `CLIENT_ID`
+3. Default value: `9d1c250a-e61b-44d9-88ed-5944d1962f5e`
+
 ## AnthropicProvider Implementation
 
 The AnthropicProvider extends the BaseProvider class and implements Anthropic-specific functionality.
@@ -192,12 +201,19 @@ buildUrl(path: string, query: string): string {
 
 ### Key Features
 
-1. **Token Refresh**: Handles OAuth token refresh automatically
+1. **Token Refresh**: Handles OAuth token refresh automatically with detailed error logging
 2. **Rate Limit Detection**: Distinguishes between hard limits and soft warnings
 3. **Usage Extraction**: Parses token usage from both streaming and non-streaming responses
+   - For streaming: Captures initial usage from `message_start` event (capped at 64KB)
+   - For non-streaming: Extracts complete usage from JSON response
+   - Includes cache token breakdown (cache read, cache creation)
 4. **Tier Detection**: Automatically detects account tier based on rate limit tokens
-5. **Header Management**: Handles compression and authorization headers
-6. **Streaming Response Capture**: Captures complete streaming responses for analytics (recent enhancement)
+5. **Header Management**: 
+   - Removes compression headers (`accept-encoding`, `content-encoding`)
+   - Sanitizes proxy headers using `sanitizeProxyHeaders` utility
+   - Adds Bearer token authentication
+6. **Streaming Response Capture**: Captures initial streaming responses for analytics
+7. **Cost Tracking**: Extracts cost information from `anthropic-billing-cost` header
 
 ### Rate Limit Status Types
 
@@ -260,6 +276,7 @@ export interface Provider {
   // Optional features
   extractTierInfo?(response: Response): Promise<number | null>;
   extractUsageInfo?(response: Response): Promise<UsageInfo | null>;
+  isStreamingResponse?(response: Response): boolean;
 }
 ```
 
@@ -267,9 +284,12 @@ export interface Provider {
 
 The BaseProvider abstract class provides default implementations for common functionality:
 
-- **Header preparation**: Adds Bearer token and removes host header
-- **Rate limit parsing**: Checks unified headers and 429 status
+- **Header preparation**: Adds Bearer token (if provided) and removes host header
+- **Rate limit parsing**: Checks unified headers first, then falls back to 429 status with retry-after header
 - **Response processing**: Default pass-through implementation
+- **Streaming detection**: Checks for `text/event-stream` or `stream` in content-type header
+- **Tier extraction**: Default returns null (no tier info)
+- **Usage extraction**: Default returns null (no usage info)
 
 ## Account Tier System
 
@@ -368,11 +388,13 @@ The system supports two authentication methods:
    - Used for both console and max modes
    - Provides automatic token refresh
    - Better security with short-lived access tokens
+   - Supports PKCE for enhanced security
 
 2. **API Key Authentication** (Legacy)
-   - Direct API key usage
-   - No automatic refresh
+   - Direct API key usage stored in `account.api_key`
+   - No automatic refresh capability
    - Simpler but less secure
+   - Maintained for backward compatibility
 
 ### Token Lifecycle
 
@@ -494,8 +516,14 @@ registry.registerProvider(new NewProvider());
 
 ## Recent Updates
 
-- **Streaming Response Capture**: Added complete capture of streaming responses for analytics (commit 55446bf)
+- **Streaming Response Capture**: Added initial capture of streaming responses for analytics (commit 55446bf)
+  - Captures up to 64KB of streaming data to extract usage information
+  - Extracts model and token usage from `message_start` event
+  - Prevents hanging by properly canceling stream readers
 - **Enhanced Analytics**: Improved usage tracking and cost estimation for both streaming and non-streaming responses
+  - Includes cache token breakdown (cache read vs cache creation)
+  - Extracts billing cost from response headers
+- **Header Sanitization**: Added `sanitizeProxyHeaders` utility for proper proxy header handling (commit f0f179e)
 
 ## Future Enhancements
 

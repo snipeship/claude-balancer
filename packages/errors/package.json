@@ -1,0 +1,17 @@
+{
+	"name": "@ccflare/errors",
+	"version": "1.0.0",
+	"main": "./src/index.ts",
+	"types": "./src/index.ts",
+	"scripts": {
+		"typecheck": "tsc --noEmit",
+		"lint": "biome check --write --unsafe"
+	},
+	"dependencies": {
+		"@ccflare/core": "workspace:*"
+	},
+	"devDependencies": {
+		"@types/bun": "1.1.15",
+		"typescript": "5.7.2"
+	}
+}

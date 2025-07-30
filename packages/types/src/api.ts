@@ -3,4 +3,5 @@ export interface RequestMeta {
 	method: string;
 	path: string;
 	timestamp: number;
+	agentUsed?: string | null;
 }

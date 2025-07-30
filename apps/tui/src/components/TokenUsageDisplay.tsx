@@ -1,4 +1,5 @@
 import type { RequestSummary } from "@ccflare/tui-core";
+import { processTokenUsage } from "@ccflare/ui-common";
 import { Box, Text } from "ink";
 
 interface TokenUsageDisplayProps {
@@ -6,17 +7,9 @@ interface TokenUsageDisplayProps {
 }
 
 export function TokenUsageDisplay({ summary }: TokenUsageDisplayProps) {
-	const formatTokens = (tokens?: number): string => {
-		if (!tokens) return "0";
-		return tokens.toLocaleString();
-	};
+	const usage = processTokenUsage(summary);
 
-	const formatCost = (cost?: number): string => {
-		if (!cost || cost === 0) return "$0.0000";
-		return `$${cost.toFixed(4)}`;
-	};
-
-	if (!summary.inputTokens && !summary.outputTokens) {
+	if (!usage.hasData) {
 		return (
 			<Box flexDirection="column" marginTop={1}>
 				<Text dimColor>No token usage data available</Text>
@@ -24,66 +17,66 @@ export function TokenUsageDisplay({ summary }: TokenUsageDisplayProps) {
 		);
 	}
 
+	const { sections } = usage;
+
 	return (
 		<Box flexDirection="column" marginTop={1}>
 			<Text bold>Token Usage:</Text>
 			<Box marginLeft={2} flexDirection="column">
-				{summary.inputTokens !== undefined && (
+				{sections.inputTokens && (
 					<Box>
-						<Text>Input Tokens: </Text>
+						<Text>{sections.inputTokens.label}: </Text>
 						<Text color="yellow" bold>
-							{formatTokens(summary.inputTokens)}
+							{sections.inputTokens.value}
 						</Text>
 					</Box>
 				)}
 
-				{summary.outputTokens !== undefined && (
+				{sections.outputTokens && (
 					<Box>
-						<Text>Output Tokens: </Text>
+						<Text>{sections.outputTokens.label}: </Text>
 						<Text color="yellow" bold>
-							{formatTokens(summary.outputTokens)}
+							{sections.outputTokens.value}
 						</Text>
 					</Box>
 				)}
 
-				{summary.cacheReadInputTokens !== undefined &&
-					summary.cacheReadInputTokens > 0 && (
-						<Box>
-							<Text>Cache Read Tokens: </Text>
-							<Text color="cyan" bold>
-								{formatTokens(summary.cacheReadInputTokens)}
-							</Text>
-						</Box>
-					)}
+				{sections.cacheReadTokens && (
+					<Box>
+						<Text>{sections.cacheReadTokens.label}: </Text>
+						<Text color="cyan" bold>
+							{sections.cacheReadTokens.value}
+						</Text>
+					</Box>
+				)}
 
-				{summary.cacheCreationInputTokens !== undefined &&
-					summary.cacheCreationInputTokens > 0 && (
-						<Box>
-							<Text>Cache Creation Tokens: </Text>
-							<Text color="cyan" bold>
-								{formatTokens(summary.cacheCreationInputTokens)}
-							</Text>
-						</Box>
-					)}
+				{sections.cacheCreationTokens && (
+					<Box>
+						<Text>{sections.cacheCreationTokens.label}: </Text>
+						<Text color="cyan" bold>
+							{sections.cacheCreationTokens.value}
+						</Text>
+					</Box>
+				)}
 
 				<Box marginTop={1}>
 					<Text>─────────────────────</Text>
 				</Box>
 
-				{summary.totalTokens !== undefined && (
+				{sections.totalTokens && (
 					<Box>
-						<Text bold>Total Tokens: </Text>
+						<Text bold>{sections.totalTokens.label}: </Text>
 						<Text color="green" bold>
-							{formatTokens(summary.totalTokens)}
+							{sections.totalTokens.value}
 						</Text>
 					</Box>
 				)}
 
-				{summary.costUsd !== undefined && (
+				{sections.cost && (
 					<Box>
-						<Text bold>Cost: </Text>
+						<Text bold>{sections.cost.label}: </Text>
 						<Text color="green" bold>
-							{formatCost(summary.costUsd)}
+							{sections.cost.value}
 						</Text>
 					</Box>
 				)}

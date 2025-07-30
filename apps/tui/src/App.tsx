@@ -2,10 +2,11 @@ import { Box, Text, useApp } from "ink";
 import SelectInput from "ink-select-input";
 import { useState } from "react";
 import { AccountsScreen } from "./components/AccountsScreen";
-import { EnhancedRequestsScreen } from "./components/EnhancedRequestsScreen";
-import { EnhancedStatsScreen } from "./components/EnhancedStatsScreen";
+import { AnalyticsScreen } from "./components/AnalyticsScreen";
 import { LogsScreen } from "./components/LogsScreen";
+import { RequestsScreen } from "./components/RequestsScreen";
 import { ServerScreen } from "./components/ServerScreen";
+import { StatsScreen } from "./components/StatsScreen";
 import { StrategyScreen } from "./components/StrategyScreen";
 
 type Screen =
@@ -13,6 +14,7 @@ type Screen =
 	| "server"
 	| "accounts"
 	| "stats"
+	| "analytics"
 	| "requests"
 	| "logs"
 	| "strategy";
@@ -25,6 +27,7 @@ export function App() {
 		{ label: "🚀 Server", value: "server" },
 		{ label: "👥 Manage Accounts", value: "accounts" },
 		{ label: "📊 View Statistics", value: "stats" },
+		{ label: "📈 Analytics Dashboard", value: "analytics" },
 		{ label: "📜 View Requests", value: "requests" },
 		{ label: "📋 View Logs", value: "logs" },
 		{ label: "⚖️  Load Balancer", value: "strategy" },
@@ -63,8 +66,9 @@ export function App() {
 		<Box flexDirection="column" height="100%">
 			{screen === "server" && <ServerScreen onBack={handleBack} />}
 			{screen === "accounts" && <AccountsScreen onBack={handleBack} />}
-			{screen === "stats" && <EnhancedStatsScreen onBack={handleBack} />}
-			{screen === "requests" && <EnhancedRequestsScreen onBack={handleBack} />}
+			{screen === "stats" && <StatsScreen onBack={handleBack} />}
+			{screen === "analytics" && <AnalyticsScreen onBack={handleBack} />}
+			{screen === "requests" && <RequestsScreen onBack={handleBack} />}
 			{screen === "logs" && <LogsScreen onBack={handleBack} />}
 			{screen === "strategy" && <StrategyScreen onBack={handleBack} />}
 		</Box>

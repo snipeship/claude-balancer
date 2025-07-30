@@ -1,3 +1,4 @@
+import { validateNumber } from "@ccflare/core";
 import {
 	createAccountAddHandler,
 	createAccountPauseHandler,
@@ -6,11 +7,20 @@ import {
 	createAccountsListHandler,
 	createAccountTierUpdateHandler,
 } from "./handlers/accounts";
+import {
+	createAgentPreferenceUpdateHandler,
+	createAgentsListHandler,
+	createWorkspacesListHandler,
+} from "./handlers/agents";
 import { createAnalyticsHandler } from "./handlers/analytics";
 import { createConfigHandlers } from "./handlers/config";
 import { createHealthHandler } from "./handlers/health";
 import { createLogsStreamHandler } from "./handlers/logs";
 import { createLogsHistoryHandler } from "./handlers/logs-history";
+import {
+	createOAuthCallbackHandler,
+	createOAuthInitHandler,
+} from "./handlers/oauth";
 import {
 	createRequestsDetailHandler,
 	createRequestsSummaryHandler,
@@ -41,10 +51,10 @@ export class APIRouter {
 
 		// Create handlers
 		const healthHandler = createHealthHandler(db, config);
-		const statsHandler = createStatsHandler(db);
+		const statsHandler = createStatsHandler(dbOps);
 		const statsResetHandler = createStatsResetHandler(dbOps);
 		const accountsHandler = createAccountsListHandler(db);
-		const accountAddHandler = createAccountAddHandler(dbOps);
+		const accountAddHandler = createAccountAddHandler(dbOps, config);
 		const _accountRemoveHandler = createAccountRemoveHandler(dbOps);
 		const _accountTierHandler = createAccountTierUpdateHandler(dbOps);
 		const requestsSummaryHandler = createRequestsSummaryHandler(db);
@@ -53,6 +63,10 @@ export class APIRouter {
 		const logsStreamHandler = createLogsStreamHandler();
 		const logsHistoryHandler = createLogsHistoryHandler();
 		const analyticsHandler = createAnalyticsHandler(this.context);
+		const oauthInitHandler = createOAuthInitHandler(dbOps);
+		const oauthCallbackHandler = createOAuthCallbackHandler(dbOps);
+		const agentsHandler = createAgentsListHandler(dbOps);
+		const workspacesHandler = createWorkspacesListHandler();
 
 		// Register routes
 		this.handlers.set("GET:/health", () => healthHandler());
@@ -60,12 +74,28 @@ export class APIRouter {
 		this.handlers.set("POST:/api/stats/reset", () => statsResetHandler());
 		this.handlers.set("GET:/api/accounts", () => accountsHandler());
 		this.handlers.set("POST:/api/accounts", (req) => accountAddHandler(req));
+		this.handlers.set("POST:/api/oauth/init", (req) => oauthInitHandler(req));
+		this.handlers.set("POST:/api/oauth/callback", (req) =>
+			oauthCallbackHandler(req),
+		);
 		this.handlers.set("GET:/api/requests", (_req, url) => {
-			const limit = parseInt(url.searchParams.get("limit") || "50");
+			const limitParam = url.searchParams.get("limit");
+			const limit =
+				validateNumber(limitParam || "50", "limit", {
+					min: 1,
+					max: 1000,
+					integer: true,
+				}) || 50;
 			return requestsSummaryHandler(limit);
 		});
 		this.handlers.set("GET:/api/requests/detail", (_req, url) => {
-			const limit = parseInt(url.searchParams.get("limit") || "100");
+			const limitParam = url.searchParams.get("limit");
+			const limit =
+				validateNumber(limitParam || "100", "limit", {
+					min: 1,
+					max: 1000,
+					integer: true,
+				}) || 100;
 			return requestsDetailHandler(limit);
 		});
 		// Note: Dynamic route for request payloads is handled in the route() method
@@ -84,6 +114,8 @@ export class APIRouter {
 		this.handlers.set("GET:/api/analytics", (_req, url) => {
 			return analyticsHandler(url.searchParams);
 		});
+		this.handlers.set("GET:/api/agents", () => agentsHandler());
+		this.handlers.set("GET:/api/workspaces", () => workspacesHandler());
 	}
 
 	/**
@@ -159,6 +191,23 @@ export class APIRouter {
 			if (parts.length === 4 && method === "DELETE") {
 				const removeHandler = createAccountRemoveHandler(this.context.dbOps);
 				return await this.wrapHandler((req) => removeHandler(req, accountId))(
+					req,
+					url,
+				);
+			}
+		}
+
+		// Check for dynamic agent endpoints
+		if (path.startsWith("/api/agents/")) {
+			const parts = path.split("/");
+			const agentId = parts[3];
+
+			// Agent preference update
+			if (path.endsWith("/preference") && method === "POST") {
+				const preferenceHandler = createAgentPreferenceUpdateHandler(
+					this.context.dbOps,
+				);
+				return await this.wrapHandler((req) => preferenceHandler(req, agentId))(
 					req,
 					url,
 				);

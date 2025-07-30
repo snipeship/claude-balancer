@@ -1,6 +1,7 @@
 import { Pause, Play, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, type LogEntry } from "../api";
+import { useLogHistory } from "../hooks/queries";
 import { Button } from "./ui/button";
 import {
 	Card,
@@ -14,7 +15,6 @@ export function LogsTab() {
 	const [logs, setLogs] = useState<LogEntry[]>([]);
 	const [paused, setPaused] = useState(false);
 	const [autoScroll, setAutoScroll] = useState(true);
-	const [loading, setLoading] = useState(true);
 	const eventSourceRef = useRef<EventSource | null>(null);
 	const logsEndRef = useRef<HTMLDivElement>(null);
 
@@ -32,19 +32,13 @@ export function LogsTab() {
 	}, []);
 
 	// Load historical logs on mount
+	const { data: history, isLoading: loading, error } = useLogHistory();
+
 	useEffect(() => {
-		const loadHistory = async () => {
-			try {
-				const history = await api.getLogHistory();
-				setLogs(history);
-			} catch (error) {
-				console.error("Failed to load log history:", error);
-			} finally {
-				setLoading(false);
-			}
-		};
-		loadHistory();
-	}, []);
+		if (history) {
+			setLogs(history);
+		}
+	}, [history]);
 
 	useEffect(() => {
 		if (!paused && !loading) {
@@ -125,6 +119,10 @@ export function LogsTab() {
 				<div className="space-y-1 max-h-[500px] overflow-y-auto font-mono text-sm">
 					{loading ? (
 						<p className="text-muted-foreground">Loading logs...</p>
+					) : error ? (
+						<p className="text-destructive">
+							Error: {error instanceof Error ? error.message : String(error)}
+						</p>
 					) : logs.length === 0 ? (
 						<p className="text-muted-foreground">No logs yet...</p>
 					) : (

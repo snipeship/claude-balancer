@@ -2,9 +2,9 @@
 
 ## Overview
 
-ccflare is a sophisticated load balancer proxy system designed to distribute requests across multiple OAuth accounts for AI services (currently focused on Anthropic's Claude API). It prevents rate limiting by intelligently routing requests through different authenticated accounts using various load balancing strategies.
+ccflare is a sophisticated load balancer proxy system designed to distribute requests across multiple OAuth accounts for AI services (currently focused on Anthropic's Claude API). It prevents rate limiting by intelligently routing requests through different authenticated accounts using a session-based load balancing strategy.
 
-The system is built with a modular, microservices-inspired architecture using TypeScript and Bun runtime, emphasizing separation of concerns, extensibility, and real-time monitoring capabilities. Recent enhancements include asynchronous database operations, streaming response capture for analytics, and advanced request filtering.
+The system is built with a modular, microservices-inspired architecture using TypeScript and Bun runtime, emphasizing separation of concerns, extensibility, and real-time monitoring capabilities. Recent enhancements include asynchronous database operations, streaming response capture for analytics, advanced request filtering, and agent detection with model preference management.
 
 ## System Overview
 
@@ -12,9 +12,8 @@ The system is built with a modular, microservices-inspired architecture using Ty
 graph LR
     subgraph "User Interfaces"
         UI1[Web Dashboard]
-        UI2[CLI]
-        UI3[TUI]
-        UI4[API Clients]
+        UI2[TUI/CLI]
+        UI3[API Clients]
     end
     
     subgraph "ccflare Core"
@@ -22,12 +21,14 @@ graph LR
         PROXY[Proxy Engine]
         AUTH[OAuth Manager]
         MON[Monitoring]
+        AGENT[Agent Detector]
     end
     
     subgraph "Data Storage"
         DB[(SQLite DB)]
         LOGS[Log Files]
         CFG[Config]
+        WS[Workspaces]
     end
     
     subgraph "External Services"
@@ -38,16 +39,17 @@ graph LR
     UI1 --> LB
     UI2 --> LB
     UI3 --> LB
-    UI4 --> LB
     
     LB --> PROXY
     PROXY --> AUTH
+    PROXY --> AGENT
     AUTH --> OAUTH
     PROXY --> CLAUDE
     
     LB --> DB
     PROXY --> DB
     MON --> DB
+    AGENT --> WS
     MON --> LOGS
     LB --> CFG
 ```
@@ -59,8 +61,7 @@ graph TB
     %% Client Layer
     subgraph "Client Applications"
         CA[Client Apps]
-        CLI[CLI Tool<br/>apps/cli]
-        TUI[TUI Interface<br/>apps/tui]
+        TUI[TUI/CLI Tool<br/>apps/tui]
         WEB[Web Dashboard<br/>packages/dashboard-web]
     end
 
@@ -71,19 +72,29 @@ graph TB
         subgraph "Request Processing"
             ROUTER[API Router<br/>packages/http-api]
             PROXY[Proxy Handler<br/>packages/proxy]
+            INTERCEPT[Agent Interceptor]
         end
         
         subgraph "Core Services"
             LB[Load Balancer<br/>packages/load-balancer]
             PROV[Provider Registry<br/>packages/providers]
-            AUTH[OAuth Manager]
+            AUTH[OAuth Manager<br/>packages/oauth-flow]
+            AGENTS[Agent Registry<br/>packages/agents]
             DI[DI Container<br/>packages/core-di]
             CFG[Config<br/>packages/config]
         end
         
         subgraph "Data Layer"
             DB[Database Operations<br/>packages/database]
+            REPOS[Repositories]
             LOGGER[Logger<br/>packages/logger]
+        end
+        
+        subgraph "Utilities"
+            ERRORS[Error Handling<br/>packages/errors]
+            HTTP[HTTP Utilities<br/>packages/http-common]
+            UI_COMMON[UI Common<br/>packages/ui-common]
+            UI_CONST[UI Constants<br/>packages/ui-constants]
         end
     end
 
@@ -97,11 +108,11 @@ graph TB
     SQLITE[(SQLite Database)]
     LOGS[Log Files]
     CONFIG[Config Files]
+    WORKSPACES[Agent Workspaces]
 
     %% Connections
     CA -->|HTTP/HTTPS| SERVER
-    CLI -->|Commands| SERVER
-    TUI -->|API Calls| SERVER
+    TUI -->|Commands/API| SERVER
     WEB -->|Embedded in| SERVER
     
     SERVER --> ROUTER
@@ -111,6 +122,9 @@ graph TB
     ROUTER --> PROXY
     ROUTER -->|Health/Stats/Config| DB
     
+    PROXY --> INTERCEPT
+    INTERCEPT --> AGENTS
+    AGENTS --> WORKSPACES
     PROXY --> LB
     LB -->|Select Account| DB
     PROXY --> PROV
@@ -119,7 +133,8 @@ graph TB
     PROXY -->|Forward Request| CLAUDE
     AUTH -->|Token Refresh| OAUTH
     
-    DB --> SQLITE
+    DB --> REPOS
+    REPOS --> SQLITE
     LOGGER --> LOGS
     LOGGER --> DB
 ```
@@ -133,24 +148,29 @@ The project is organized as a Bun monorepo with clear separation of concerns:
 ```
 ccflare/
 ├── apps/                    # Deployable applications
-│   ├── cli/                # Command-line interface
 │   ├── lander/            # Static landing page
 │   ├── server/            # Main HTTP server
-│   └── tui/               # Terminal UI (Ink-based)
+│   └── tui/               # Terminal UI with integrated CLI
 ├── packages/              # Shared libraries
+│   ├── agents/            # Agent discovery and workspace management
 │   ├── cli-commands/      # CLI command implementations
 │   ├── config/            # Configuration management
 │   ├── core/              # Core utilities and types
 │   ├── core-di/           # Dependency injection
 │   ├── dashboard-web/     # React dashboard
-│   ├── database/          # SQLite operations
+│   ├── database/          # SQLite operations with repository pattern
+│   ├── errors/            # Error handling utilities
 │   ├── http-api/          # REST API handlers
+│   ├── http-common/       # Common HTTP utilities
 │   ├── load-balancer/     # Load balancing strategies
 │   ├── logger/            # Logging utilities
+│   ├── oauth-flow/        # OAuth authentication flow
 │   ├── providers/         # AI provider integrations
-│   ├── proxy/             # Request proxy logic
+│   ├── proxy/             # Request proxy logic with agent interceptor
 │   ├── tui-core/          # TUI screen components
-│   └── types/             # Shared TypeScript types
+│   ├── types/             # Shared TypeScript types
+│   ├── ui-common/         # Shared UI components and formatters
+│   └── ui-constants/      # UI constants and configuration
 ```
 
 ### 1. Server Application (`apps/server`)
@@ -163,13 +183,15 @@ graph LR
         START[Server Start]
         DI[DI Container Setup]
         DB_INIT[Database Init]
+        AGENT_INIT[Agent Registry Init]
         STRAT[Strategy Init]
         ROUTES[Route Setup]
     end
     
     START --> DI
     DI --> DB_INIT
-    DB_INIT --> STRAT
+    DB_INIT --> AGENT_INIT
+    AGENT_INIT --> STRAT
     STRAT --> ROUTES
     
     subgraph "Request Flow"
@@ -200,10 +222,102 @@ graph LR
 - Static asset serving for dashboard
 - Graceful shutdown coordination
 - Strategy hot-reloading based on configuration changes
+- Agent registry initialization
 
-### 2. Load Balancer Package (`packages/load-balancer`)
+### 2. TUI Application with Integrated CLI (`apps/tui`)
 
-Implements multiple load balancing strategies:
+The Terminal User Interface application that also serves as the CLI:
+
+```mermaid
+graph TB
+    subgraph "TUI/CLI Entry Point"
+        MAIN[main.ts]
+        ARGS[Parse Arguments]
+        
+        subgraph "CLI Commands"
+            SERVE[--serve]
+            ADD[--add-account]
+            LIST[--list]
+            REMOVE[--remove]
+            STATS[--stats]
+            LOGS[--logs]
+            ANALYZE[--analyze]
+        end
+        
+        subgraph "Interactive Mode"
+            TUI[TUI Interface]
+            AUTO_SERVER[Auto-start Server]
+        end
+    end
+    
+    MAIN --> ARGS
+    ARGS -->|CLI Command| CLI Commands
+    ARGS -->|No Command| Interactive Mode
+    TUI --> AUTO_SERVER
+```
+
+**Features:**
+- Unified binary for both CLI and TUI functionality
+- Auto-starts server when launching interactive TUI
+- Account management commands
+- Statistics viewing
+- Log streaming
+- Performance analysis
+- Configuration updates
+
+### 3. Agents Package (`packages/agents`)
+
+Manages agent discovery and workspace registration:
+
+```mermaid
+classDiagram
+    class AgentRegistry {
+        -cache: AgentCache
+        -workspaces: Map<string, AgentWorkspace>
+        +initialize(): Promise<void>
+        +getAgents(): Promise<Agent[]>
+        +findAgentByPrompt(prompt: string): Agent
+        +registerWorkspace(path: string): Promise<void>
+        +loadAgents(): Promise<void>
+    }
+    
+    class Agent {
+        +id: string
+        +name: string
+        +description: string
+        +color: string
+        +model: AllowedModel
+        +systemPrompt: string
+        +source: "global" | "workspace"
+        +workspace?: string
+    }
+    
+    class AgentWorkspace {
+        +path: string
+        +name: string
+        +lastSeen: number
+    }
+    
+    class WorkspacePersistence {
+        +loadWorkspaces(): Promise<AgentWorkspace[]>
+        +saveWorkspaces(workspaces: AgentWorkspace[]): Promise<void>
+    }
+    
+    AgentRegistry --> Agent
+    AgentRegistry --> AgentWorkspace
+    AgentRegistry --> WorkspacePersistence
+```
+
+**Agent Discovery Process:**
+1. **Global Agents**: Loaded from `~/.config/ccflare/agents/` directory
+2. **Workspace Agents**: Dynamically discovered from `<workspace>/.claude/agents/` directories
+3. **Agent Format**: Markdown files with frontmatter containing metadata
+4. **Workspace Detection**: Automatically registers workspaces from system prompts containing CLAUDE.md references
+5. **Model Preferences**: Per-agent model preferences stored in database
+
+### 4. Load Balancer Package (`packages/load-balancer`)
+
+Implements the session-based load balancing strategy:
 
 ```mermaid
 classDiagram
@@ -213,46 +327,37 @@ classDiagram
         +initialize?(store: StrategyStore): void
     }
     
-    class RoundRobinStrategy {
-        -cursor: number
-        +select(accounts, meta): Account[]
-    }
-    
-    class LeastRequestsStrategy {
-        +select(accounts, meta): Account[]
-    }
-    
     class SessionStrategy {
         -sessionDurationMs: number
         -store: StrategyStore
+        -log: Logger
+        +constructor(sessionDurationMs?: number)
         +select(accounts, meta): Account[]
         +initialize(store): void
+        -resetSessionIfExpired(account): void
     }
     
-    class WeightedStrategy {
-        +select(accounts, meta): Account[]
+    class StrategyStore {
+        <<interface>>
+        +resetAccountSession(accountId: string, timestamp: number): void
+        +getAllAccounts?(): Account[]
+        +updateAccountRequestCount?(accountId: string, count: number): void
+        +getAccount?(accountId: string): Account | null
     }
     
-    class WeightedRoundRobinStrategy {
-        -currentIndex: number
-        +select(accounts, meta): Account[]
-    }
-    
-    LoadBalancingStrategy <|.. RoundRobinStrategy
-    LoadBalancingStrategy <|.. LeastRequestsStrategy
     LoadBalancingStrategy <|.. SessionStrategy
-    LoadBalancingStrategy <|.. WeightedStrategy
-    LoadBalancingStrategy <|.. WeightedRoundRobinStrategy
+    SessionStrategy ..> StrategyStore : uses
 ```
 
-**Strategy Descriptions:**
-- **RoundRobin**: Distributes requests evenly across all available accounts
-- **LeastRequests**: Prioritizes accounts with the lowest request count
-- **Session**: Maintains sticky sessions for a configured duration (default 5 hours)
-- **Weighted**: Considers account tier when distributing load
-- **WeightedRoundRobin**: Round-robin with tier-based weighting
+**Session Strategy:**
+- **Session**: The only available strategy, maintains sticky sessions for a configured duration (default 5 hours)
+- Minimizes account switching to avoid triggering Claude's anti-abuse systems
+- Automatically handles failover when the active session account becomes unavailable
+- Tracks session start time and request count per session
 
-### 3. Provider Package (`packages/providers`)
+**Note:** Other strategies (round-robin, least-requests, weighted) were removed from the codebase as they could trigger account bans.
+
+### 5. Provider Package (`packages/providers`)
 
 Manages AI service providers with extensible architecture:
 
@@ -298,9 +403,9 @@ graph TB
 - Account tier detection
 - Extensible for additional AI providers
 
-### 4. Database Package (`packages/database`)
+### 6. Database Package (`packages/database`)
 
-SQLite-based persistence layer with asynchronous write capabilities:
+SQLite-based persistence layer with repository pattern and asynchronous writes:
 
 ```mermaid
 erDiagram
@@ -343,6 +448,7 @@ erDiagram
         integer cache_read_input_tokens
         integer cache_creation_input_tokens
         real cost_usd
+        text agent_used
     }
     
     request_payloads {
@@ -350,8 +456,50 @@ erDiagram
         text json
     }
     
+    agent_preferences {
+        text agent_id PK
+        text model
+        integer updated_at
+    }
+    
     accounts ||--o{ requests : "handles"
     requests ||--|| request_payloads : "has payload"
+    agent_preferences ||--o{ requests : "configures"
+```
+
+**Repository Pattern:**
+```mermaid
+classDiagram
+    class BaseRepository~T~ {
+        #db: Database
+        #query(sql, params): R[]
+        #get(sql, params): R
+        #run(sql, params): void
+        #runWithChanges(sql, params): number
+    }
+    
+    class AccountRepository {
+        +getAllAccounts(): Account[]
+        +getAccount(id): Account
+        +createAccount(account): void
+        +updateAccount(id, data): void
+        +deleteAccount(id): void
+    }
+    
+    class RequestRepository {
+        +logRequest(request): void
+        +getRequests(filters): Request[]
+        +getRequestStats(): Stats
+    }
+    
+    class AgentPreferenceRepository {
+        +getPreference(agentId): Preference
+        +setPreference(agentId, model): void
+    }
+    
+    BaseRepository <|-- AccountRepository
+    BaseRepository <|-- RequestRepository
+    BaseRepository <|-- AgentPreferenceRepository
 ```
 
 **Database Operations:**
@@ -360,15 +508,16 @@ erDiagram
 - Rate limit tracking
 - Session management
 - Usage statistics
+- Agent preference storage
 - Migration system for schema evolution
 - **AsyncDbWriter**: Queue-based asynchronous writes to prevent blocking
   - Processes database writes in batches every 100ms
   - Ensures graceful shutdown with queue flushing
   - Prevents database write bottlenecks during high load
 
-### 5. Proxy Package (`packages/proxy`)
+### 7. Proxy Package (`packages/proxy`)
 
-Core request forwarding logic with streaming support:
+Core request forwarding logic with agent detection and streaming support:
 
 ```mermaid
 stateDiagram-v2
@@ -376,7 +525,11 @@ stateDiagram-v2
     ValidateRequest --> CheckProvider: Valid
     ValidateRequest --> Error400: Invalid
     
-    CheckProvider --> GetAccounts
+    CheckProvider --> AgentDetection
+    AgentDetection --> ModifyModel: Agent Found
+    AgentDetection --> GetAccounts: No Agent
+    
+    ModifyModel --> GetAccounts
     GetAccounts --> NoAccounts: Empty
     GetAccounts --> TryAccount: Has Accounts
     
@@ -406,6 +559,30 @@ stateDiagram-v2
     ReturnResponse --> [*]
 ```
 
+**Agent Interceptor:**
+```mermaid
+sequenceDiagram
+    participant Client
+    participant Proxy
+    participant AgentInterceptor
+    participant AgentRegistry
+    participant Database
+    
+    Client->>Proxy: Request with System Prompt
+    Proxy->>AgentInterceptor: Intercept Request
+    AgentInterceptor->>AgentInterceptor: Extract System Prompt
+    AgentInterceptor->>AgentInterceptor: Detect Workspace Paths
+    AgentInterceptor->>AgentRegistry: Register Workspaces
+    AgentRegistry->>AgentRegistry: Load Workspace Agents
+    AgentInterceptor->>AgentRegistry: Find Agent by Prompt
+    AgentRegistry-->>AgentInterceptor: Agent Match
+    AgentInterceptor->>Database: Get Model Preference
+    Database-->>AgentInterceptor: Preferred Model
+    AgentInterceptor->>AgentInterceptor: Modify Request Body
+    AgentInterceptor-->>Proxy: Modified Request
+    Proxy->>Client: Response
+```
+
 **Proxy Features:**
 - Request validation and routing
 - Token refresh with stampede prevention
@@ -413,6 +590,8 @@ stateDiagram-v2
 - Rate limit detection and account marking
 - Usage tracking and cost calculation
 - Request/response payload logging
+- **Agent Detection**: Automatically detects agent usage from system prompts
+- **Model Override**: Applies agent-specific model preferences
 - **Streaming Response Capture**: 
   - Tees streaming responses for analytics without blocking
   - Configurable buffer size (default 256KB)
@@ -421,7 +600,44 @@ stateDiagram-v2
   - Buffers small request bodies (up to 256KB) for retry scenarios
   - Enables request replay on failover without client resend
 
-### 6. HTTP API Package (`packages/http-api`)
+### 8. OAuth Flow Package (`packages/oauth-flow`)
+
+Manages the OAuth authentication flow:
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant OAuthFlow
+    participant OAuthProvider
+    participant Database
+    participant External OAuth
+    
+    User->>OAuthFlow: begin(name, mode)
+    OAuthFlow->>OAuthFlow: Check existing accounts
+    OAuthFlow->>OAuthProvider: Get OAuth config
+    OAuthFlow->>OAuthFlow: Generate PKCE
+    OAuthFlow->>OAuthProvider: Generate auth URL
+    OAuthFlow-->>User: Auth URL + session data
+    
+    User->>External OAuth: Authorize
+    External OAuth-->>User: Authorization code
+    
+    User->>OAuthFlow: complete(code, session)
+    OAuthFlow->>OAuthProvider: Exchange code
+    OAuthProvider->>External OAuth: Token request
+    External OAuth-->>OAuthProvider: Tokens
+    OAuthProvider-->>OAuthFlow: OAuth tokens
+    OAuthFlow->>Database: Create account
+    OAuthFlow-->>User: Account created
+```
+
+**Features:**
+- PKCE (Proof Key for Code Exchange) support
+- Session management
+- Token exchange
+- Account creation with tier support
+
+### 9. HTTP API Package (`packages/http-api`)
 
 RESTful API endpoints:
 
@@ -443,6 +659,12 @@ graph LR
             TIER_ACC[POST /api/accounts/:id/tier]
         end
         
+        subgraph "Agent Management"
+            LIST_AGENTS[GET /api/agents]
+            GET_PREF[GET /api/agents/:id/preference]
+            SET_PREF[POST /api/agents/:id/preference]
+        end
+        
         subgraph "Configuration"
             GET_CFG[GET /api/config]
             GET_STRAT[GET /api/config/strategy]
@@ -457,6 +679,7 @@ graph LR
             LOG_HIST[GET /api/logs/history]
         end
     end
+```
 
 **Analytics Endpoint Enhancements:**
 - **GET /api/analytics**: Advanced analytics with filtering support
@@ -470,9 +693,146 @@ graph LR
     - Model distribution and performance metrics
     - Cost analysis by model
     - Account performance statistics
+    - Agent usage statistics
+
+### 10. Error Handling Package (`packages/errors`)
+
+Centralized error handling utilities:
+
+```mermaid
+classDiagram
+    class HttpError {
+        +status: number
+        +message: string
+        +details?: unknown
+    }
+    
+    class ErrorType {
+        <<enumeration>>
+        NETWORK
+        AUTH
+        RATE_LIMIT
+        VALIDATION
+        SERVER
+        UNKNOWN
+    }
+    
+    class ErrorUtils {
+        +getErrorType(error): ErrorType
+        +formatError(error, options): string
+        +parseHttpError(response): HttpError
+        +isNetworkError(error): boolean
+        +isAuthError(error): boolean
+        +isRateLimitError(error): boolean
+    }
+    
+    HttpError --> ErrorType
+    ErrorUtils --> ErrorType
+    ErrorUtils --> HttpError
 ```
 
-### 7. Core Packages
+**Features:**
+- Common HTTP error factories
+- Error type detection
+- User-friendly error formatting
+- Response error parsing
+- Type guards for specific error types
+
+### 11. HTTP Common Package (`packages/http-common`)
+
+Common HTTP utilities:
+
+```mermaid
+graph TB
+    subgraph "HTTP Common Utilities"
+        HEADERS[Header Utilities]
+        CLIENT[HTTP Client]
+        RESPONSES[Response Helpers]
+        ERRORS[Error Handlers]
+        
+        subgraph "Header Functions"
+            SANITIZE[sanitizeProxyHeaders()]
+        end
+    end
+    
+    HEADERS --> SANITIZE
+```
+
+**Key Utilities:**
+- **sanitizeProxyHeaders**: Removes hop-by-hop headers after automatic decompression
+  - Removes: content-encoding, content-length, transfer-encoding
+  - Ensures proper header forwarding through proxy
+- HTTP client wrapper
+- Response helpers
+- Error handling utilities
+
+### 12. UI Common Package (`packages/ui-common`)
+
+Shared UI components and formatting utilities:
+
+```mermaid
+graph LR
+    subgraph "UI Common"
+        subgraph "Components"
+            TOKEN_DISPLAY[TokenUsageDisplay]
+        end
+        
+        subgraph "Formatters"
+            DURATION[formatDuration()]
+            TOKENS[formatTokens()]
+            COST[formatCost()]
+            PERCENT[formatPercentage()]
+            TIMESTAMP[formatTimestamp()]
+            SPEED[formatTokensPerSecond()]
+        end
+        
+        subgraph "Presenters"
+            DATA_PRESENT[Data Presenters]
+        end
+    end
+```
+
+**Features:**
+- Reusable React components
+- Consistent data formatting across UI
+- Token usage visualization
+- Cost and performance metrics display
+
+### 13. UI Constants Package (`packages/ui-constants`)
+
+UI configuration and constants:
+
+```typescript
+// Color palette
+export const COLORS = {
+    primary: "#f38020",
+    success: "#10b981",
+    warning: "#f59e0b",
+    error: "#ef4444",
+    blue: "#3b82f6",
+    purple: "#8b5cf6",
+    pink: "#ec4899",
+}
+
+// Time ranges for analytics
+export type TimeRange = "1h" | "6h" | "24h" | "7d" | "30d"
+
+// Chart configurations
+export const CHART_HEIGHTS = {
+    small: 250,
+    medium: 300,
+    large: 400,
+}
+
+// Refresh intervals
+export const REFRESH_INTERVALS = {
+    default: 30000, // 30 seconds
+    fast: 10000,    // 10 seconds
+    slow: 60000,    // 1 minute
+}
+```
+
+### 14. Core Packages
 
 #### Core DI (`packages/core-di`)
 
@@ -490,6 +850,7 @@ graph TB
             DB[Database Service]
             PRICE[Pricing Logger]
             ASYNC[AsyncWriter Service]
+            AGENTS[Agent Registry]
         end
     end
     
@@ -498,6 +859,7 @@ graph TB
     CONT -->|Register| DB
     CONT -->|Register| PRICE
     CONT -->|Register| ASYNC
+    CONT -->|Register| AGENTS
     KEYS -->|Identify| CONT
 ```
 
@@ -516,6 +878,7 @@ Shared utilities and types:
 - Pricing calculations
 - Lifecycle management (graceful shutdown)
 - Strategy store interface
+- Common error types
 
 #### Config (`packages/config`)
 
@@ -537,77 +900,9 @@ Shared TypeScript type definitions:
 - Strategy enums
 - Logging interfaces
 - Common data structures
+- Agent types and interfaces
 
-### 8. CLI Commands Package (`packages/cli-commands`)
-
-Command implementations for the CLI:
-
-```mermaid
-graph LR
-    subgraph "Commands"
-        ACC[Account Management]
-        STATS[Statistics]
-        HELP[Help System]
-    end
-    
-    subgraph "Prompts"
-        ADAPT[Prompt Adapter]
-        STD[Standard Input]
-    end
-    
-    subgraph "Utils"
-        BROWSER[Browser Launcher]
-    end
-    
-    ACC --> ADAPT
-    ADAPT --> STD
-    ACC --> BROWSER
-```
-
-### 9. TUI Core Package (`packages/tui-core`)
-
-Terminal UI functionality:
-- Account management screens
-- Log viewing
-- Request monitoring
-- Statistics display
-- Server status
-
-### 10. Stream Tee Utility (`packages/proxy/src/stream-tee.ts`)
-
-Stream processing utility for non-blocking analytics:
-
-```mermaid
-graph LR
-    subgraph "Stream Tee Process"
-        UPSTREAM[Upstream Response]
-        TEE[Tee Function]
-        CLIENT[Client Stream]
-        BUFFER[Analytics Buffer]
-    end
-    
-    UPSTREAM --> TEE
-    TEE --> CLIENT
-    TEE --> BUFFER
-    
-    subgraph "Buffer Management"
-        CHECK{Size Check}
-        STORE[Memory Buffer]
-        TRUNCATE[Truncate Flag]
-    end
-    
-    BUFFER --> CHECK
-    CHECK -->|Under Limit| STORE
-    CHECK -->|Over Limit| TRUNCATE
-```
-
-**Features:**
-- Zero-copy forwarding to client
-- Configurable buffer limits
-- Graceful truncation handling
-- Error isolation from main stream
-
-### 11. Dashboard Package (`packages/dashboard-web`)
+### 15. Dashboard Package (`packages/dashboard-web`)
 
 React-based monitoring dashboard:
 
@@ -623,6 +918,7 @@ graph TB
             LOGS[Logs Tab]
             ANAL[Analytics Tab]
             STATS[Stats Tab]
+            AGENTS[Agents Tab]
         end
         
         subgraph "Components"
@@ -631,6 +927,7 @@ graph TB
             CARDS[Metric Cards]
             TABLES[Data Tables]
             CHARTS[Charts]
+            AGENT_CARDS[Agent Cards]
         end
         
         subgraph "State Management"
@@ -648,15 +945,81 @@ graph TB
     TABS --> LOGS
     TABS --> ANAL
     TABS --> STATS
+    TABS --> AGENTS
     
     OVER --> CARDS
     ACC --> TABLES
     REQ --> TABLES
     ANAL --> CHARTS
+    AGENTS --> AGENT_CARDS
     
     TABS --> API_CLIENT
     APP --> CTX
 ```
+
+**New Features:**
+- Agent management tab
+- Model preference configuration
+- Agent usage analytics
+- Workspace visualization
+
+## Agent System Architecture
+
+The agent system allows ccflare to automatically detect and apply model preferences based on the agent being used:
+
+```mermaid
+graph TB
+    subgraph "Agent Discovery"
+        GLOBAL[Global Agents<br/>~/.config/ccflare/agents/]
+        WORKSPACE[Workspace Agents<br/><workspace>/.claude/agents/]
+        REGISTRY[Agent Registry]
+    end
+    
+    subgraph "Request Processing"
+        REQUEST[Incoming Request]
+        DETECT[System Prompt Detection]
+        WORKSPACE_DISC[Workspace Discovery]
+        AGENT_MATCH[Agent Matching]
+        MODEL_PREF[Model Preference Lookup]
+        MODIFY[Request Modification]
+    end
+    
+    subgraph "Agent Format"
+        MD[Markdown File]
+        FRONT[Frontmatter Metadata]
+        PROMPT[System Prompt]
+    end
+    
+    GLOBAL --> REGISTRY
+    WORKSPACE --> REGISTRY
+    REQUEST --> DETECT
+    DETECT --> WORKSPACE_DISC
+    WORKSPACE_DISC --> REGISTRY
+    DETECT --> AGENT_MATCH
+    AGENT_MATCH --> MODEL_PREF
+    MODEL_PREF --> MODIFY
+    
+    MD --> FRONT
+    MD --> PROMPT
+```
+
+**Agent File Format:**
+```markdown
+---
+name: "Agent Name"
+description: "Agent description"
+color: "blue"
+model: "claude-opus-4-20250514"  # Optional, UI preference takes precedence
+---
+
+Your system prompt goes here...
+```
+
+**Workspace Discovery Process:**
+1. System prompt analysis for CLAUDE.md references
+2. Extraction of repository paths
+3. Automatic workspace registration
+4. Agent loading from `.claude/agents/` directories
 
 ## Applications
 
@@ -667,25 +1030,28 @@ The main HTTP server application that:
 - Serves the web dashboard
 - Provides REST API endpoints
 - Manages WebSocket connections for real-time updates
+- Initializes agent registry
 
-### 2. CLI App (`apps/cli`)
+### 2. TUI App with Integrated CLI (`apps/tui`)
 
-Command-line interface for managing ccflare:
-- Account management (add, remove, list)
-- Statistics viewing
-- Configuration updates
-- Uses `packages/cli-commands` for implementation
+Unified terminal application built with Ink (React for CLI):
+- **Interactive Mode**: 
+  - Real-time monitoring dashboard in the terminal
+  - Auto-starts server if not running
+  - Interactive account management
+  - Log streaming
+  - Request monitoring
+- **CLI Mode**: 
+  - Account management (add, remove, list, pause, resume)
+  - Statistics viewing
+  - Log streaming with tail functionality
+  - Performance analysis
+  - Server startup with `--serve`
+  - Configuration updates
 
-### 3. TUI App (`apps/tui`)
+**Note**: There is no separate CLI app - all CLI functionality is integrated into the TUI binary.
 
-Terminal User Interface built with Ink (React for CLI):
-- Real-time monitoring dashboard in the terminal
-- Interactive account management
-- Log streaming
-- Request monitoring
-- Uses `packages/tui-core` for screens
-
-### 4. Landing Page (`apps/lander`)
+### 3. Landing Page (`apps/lander`)
 
 Static landing page for the project:
 - Project overview
@@ -695,7 +1061,7 @@ Static landing page for the project:
 
 ## Component Interaction Patterns
 
-### Request Flow Sequence
+### Request Flow with Agent Detection
 
 ```mermaid
 sequenceDiagram
@@ -703,6 +1069,7 @@ sequenceDiagram
     participant Server
     participant Router
     participant Proxy
+    participant AgentInterceptor
     participant LoadBalancer
     participant AsyncWriter
     participant Database
@@ -718,6 +1085,14 @@ sequenceDiagram
         Router-->>Client: JSON Response
     else Proxy Route
         Router->>Proxy: Forward to Proxy
+        Proxy->>AgentInterceptor: Check for Agent
+        
+        alt Agent Detected
+            AgentInterceptor->>Database: Get Model Preference
+            Database-->>AgentInterceptor: Preferred Model
+            AgentInterceptor->>Proxy: Modified Request
+        end
+        
         Proxy->>LoadBalancer: Get Account
         LoadBalancer->>Database: Get Available Accounts
         Database-->>LoadBalancer: Account List
@@ -765,6 +1140,30 @@ stateDiagram-v2
     
     Active --> Removed: Delete Account
     Paused --> Removed: Delete Account
+    Removed --> [*]
+```
+
+### Agent Lifecycle
+
+```mermaid
+stateDiagram-v2
+    [*] --> GlobalAgent: Place in global directory
+    [*] --> WorkspaceAgent: Place in workspace
+    
+    GlobalAgent --> Discovered: Registry scan
+    WorkspaceAgent --> Discovered: Workspace registration
+    
+    Discovered --> Available: Loaded successfully
+    Discovered --> Invalid: Parse failure
+    
+    Available --> InUse: System prompt match
+    InUse --> ModelOverride: Preference exists
+    InUse --> DefaultModel: No preference
+    
+    Available --> Updated: File modified
+    Updated --> Available: Reload
+    
+    Available --> Removed: File deleted
     Removed --> [*]
 ```
 
@@ -852,23 +1251,39 @@ graph TB
 - **Rationale**: Critical for debugging rate limits and performance
 - **Trade-offs**: Storage overhead vs. observability
 
+### 9. Repository Pattern for Database
+- **Decision**: Implement repository pattern for database operations
+- **Rationale**: Clean separation of data access logic, easier testing
+- **Trade-offs**: Additional abstraction layer vs. maintainability
+
+### 10. Agent System Integration
+- **Decision**: Build agent detection and model preference into proxy layer
+- **Rationale**: Transparent model switching without client changes
+- **Trade-offs**: Request inspection overhead vs. flexibility
+
+### 11. Unified TUI/CLI Binary
+- **Decision**: Combine TUI and CLI into single binary
+- **Rationale**: Simpler distribution, shared codebase, consistent behavior
+- **Trade-offs**: Larger binary size vs. deployment simplicity
+
 ## Technology Stack
 
 ### Runtime & Language
 - **Bun**: High-performance JavaScript runtime
 - **TypeScript**: Type-safe development
 - **React**: Dashboard UI framework
+- **Ink**: Terminal UI framework
 - **Tailwind CSS**: Utility-first styling
 
 ### Data Storage
 - **SQLite**: Primary database
-- **File System**: Log storage
+- **File System**: Log storage, configuration, agent definitions
 
 ### Key Libraries
 - **@tanstack/react-query**: Dashboard data fetching
 - **@nivo/charts**: Analytics visualization
-- **Ink**: Terminal UI framework
-- **Commander**: CLI framework
+- **Commander**: CLI argument parsing
+- **PKCE**: OAuth security
 
 ### Development Tools
 - **Biome**: Linting and formatting
@@ -885,10 +1300,14 @@ graph TB
    - Request bodies buffered only for small payloads
    - Streaming responses captured with size limits
 5. **Data Retention**: Automatic cleanup of old request payloads (configurable)
+6. **Agent Security**: 
+   - System prompts validated before agent matching
+   - Model preferences require explicit configuration
+   - Workspace registration limited to existing directories
 
 ## Performance Characteristics
 
-1. **Request Overhead**: ~5-10ms for load balancing decision
+1. **Request Overhead**: ~5-10ms for load balancing decision + agent detection
 2. **Token Refresh**: Cached to prevent stampedes
 3. **Database Operations**: 
    - Read operations: Direct synchronous access
@@ -898,10 +1317,15 @@ graph TB
    - Base: Scales with active connections
    - Streaming: Up to 256KB per active stream (configurable)
    - AsyncWriter queue: Minimal, processes continuously
+   - Agent cache: 5-minute TTL, lazy loading
 5. **Streaming Performance**:
    - Zero-copy stream forwarding to clients
    - Parallel capture for analytics
    - Graceful degradation on memory pressure
+6. **Agent Detection**:
+   - System prompt analysis: <1ms for typical prompts
+   - Workspace discovery: Cached after first detection
+   - Model preference lookup: O(1) database query
 
 ## Future Extensibility
 
@@ -914,6 +1338,10 @@ The architecture supports:
 6. Real-time metrics export (Prometheus, DataDog)
 7. Request replay and debugging tools
 8. A/B testing for load balancing strategies
+9. Plugin system for custom agents
+10. GraphQL API layer
+11. Multi-tenant support
+12. Advanced agent capabilities (tool use, memory)
 
 ## Deployment Architecture
 
@@ -926,18 +1354,22 @@ graph TB
         DB[(SQLite DB)]
         LOGS[Log Files]
         CONFIG[Config Files]
+        AGENTS[Agent Definitions]
     end
     
     subgraph "Clients"
         LOCAL[Local Apps]
         REMOTE[Remote Clients]
+        CLAUDE_CODE[Claude Code]
     end
     
     LOCAL -->|localhost:8080| SERVER
     REMOTE -->|http://host:8080| SERVER
+    CLAUDE_CODE -->|Proxy Requests| SERVER
     SERVER --> DB
     SERVER --> LOGS
     SERVER --> CONFIG
+    SERVER --> AGENTS
 ```
 
 ### Potential Distributed Architecture
@@ -958,11 +1390,13 @@ graph TB
         REDIS[(Redis Cache)]
         PG[(PostgreSQL)]
         S3[S3-Compatible<br/>Log Storage]
+        CONSUL[Consul<br/>Agent Registry]
     end
     
     subgraph "Monitoring"
         PROM[Prometheus]
         GRAF[Grafana]
+        SENTRY[Sentry]
     end
     
     LB1 --> APP1
@@ -981,11 +1415,18 @@ graph TB
     APP2 --> S3
     APP3 --> S3
     
+    APP1 --> CONSUL
+    APP2 --> CONSUL
+    APP3 --> CONSUL
+    
     APP1 --> PROM
     APP2 --> PROM
     APP3 --> PROM
     
     PROM --> GRAF
+    APP1 --> SENTRY
+    APP2 --> SENTRY
+    APP3 --> SENTRY
 ```
 
 ## Monorepo Benefits
@@ -1003,6 +1444,7 @@ graph TB
 3. **Building**: Bun handles build orchestration
 4. **Type Safety**: TypeScript project references ensure type consistency
 5. **Linting/Formatting**: Biome provides consistent code style
+6. **Agent Development**: Drop markdown files in agent directories
 
 ## Recent Architectural Changes
 
@@ -1033,3 +1475,26 @@ graph TB
    - New `streamBodyMaxBytes` setting
    - Environment variable support for all settings
    - Dynamic configuration updates without restart
+
+6. **Agent System**
+   - Automatic agent discovery from workspaces
+   - System prompt-based agent detection
+   - Per-agent model preferences
+   - Workspace persistence and management
+
+7. **Unified TUI/CLI**
+   - Single binary for all terminal interactions
+   - Auto-server startup in interactive mode
+   - Comprehensive CLI commands
+   - Performance analysis tools
+
+8. **Enhanced Error Handling**
+   - Centralized error utilities
+   - Type-safe error detection
+   - User-friendly error formatting
+
+9. **UI Improvements**
+   - Agent management interface
+   - Model preference configuration
+   - Enhanced analytics visualizations
+   - Consistent formatting utilities

@@ -84,7 +84,7 @@ bun install
 ### 2. Start ccflare (TUI + Server)
 
 ```bash
-# Start ccflare with interactive TUI and server
+# Start ccflare with interactive TUI (automatically starts server)
 bun run ccflare
 
 # Or start just the server without TUI
@@ -92,6 +92,9 @@ bun run server
 
 # Specify session duration (default: 5 hours)
 SESSION_DURATION_MS=21600000 bun run server  # 6 hours
+
+# Run TUI directly with Bun (if not using npm scripts)
+bun run apps/tui/src/main.ts
 ```
 
 ### 3. Add Your Claude Accounts
@@ -99,14 +102,17 @@ SESSION_DURATION_MS=21600000 bun run server  # 6 hours
 ```bash
 # In another terminal, add your accounts
 # Add a work account
-bun cli add work-account
+bun run apps/tui/src/main.ts --add-account work-account
 
-# Add a personal account
-bun cli add personal-account
+# Add a personal account  
+bun run apps/tui/src/main.ts --add-account personal-account
 
 # Add accounts with specific tiers
-bun cli add pro-account --mode max --tier 1
-bun cli add max-account --mode max --tier 5
+bun run apps/tui/src/main.ts --add-account pro-account --mode max --tier 1
+bun run apps/tui/src/main.ts --add-account max-account --mode max --tier 5
+
+# Or if you have ccflare command available globally
+ccflare --add-account work-account
 ```
 
 ### 4. Configure Your Claude Client
@@ -120,19 +126,19 @@ export ANTHROPIC_BASE_URL=http://localhost:8080
 
 - **Web Dashboard**: Open [http://localhost:8080/dashboard](http://localhost:8080/dashboard) for real-time analytics
 - **Terminal UI**: Use the interactive TUI started with `bun run ccflare`
-- **CLI**: Check status with `bun cli list`
+- **CLI**: Check status with `bun run apps/tui/src/main.ts --list`
 
 ## Project Structure
 
 ```
 ccflare/
 ├── apps/               # Application packages
-│   ├── cli/           # Command-line interface
 │   ├── server/        # Main proxy server
-│   ├── tui/           # Terminal UI interface
+│   ├── tui/           # Terminal UI with integrated CLI
 │   └── lander/        # Landing page
 ├── packages/          # Core packages
 │   ├── core/          # Core business logic
+│   ├── cli-commands/  # CLI command implementations
 │   ├── database/      # SQLite database layer
 │   ├── dashboard-web/ # Web dashboard UI
 │   ├── http-api/      # REST API handlers
@@ -148,34 +154,79 @@ ccflare/
 
 ```bash
 # Main commands
-bun run ccflare    # Start TUI + Server
+bun run ccflare        # Start TUI (builds dashboard first)
 bun run server         # Start server only
 bun run tui            # Start TUI only
-bun run cli            # Run CLI commands
+bun run start          # Alias for bun run server
 
 # Development
+bun run dev            # Start TUI in development mode
 bun run dev:server     # Server with hot reload
 bun run dev:dashboard  # Dashboard development
-bun run dev:cli        # CLI development
 
 # Build & Quality
-bun run build          # Build all packages
+bun run build          # Build dashboard and TUI
+bun run build:dashboard # Build web dashboard
+bun run build:tui      # Build TUI
+bun run build:lander   # Build landing page
 bun run typecheck      # Check TypeScript types
 bun run lint           # Fix linting issues
 bun run format         # Format code
 ```
 
+## CLI Commands
+
+The ccflare CLI is integrated into the TUI application. All CLI functionality is accessed through the same executable:
+
+```bash
+# If running without global install, use the full path:
+bun run apps/tui/src/main.ts [command]
+
+# The commands below assume you're using the full path
+
+# Account management
+bun run apps/tui/src/main.ts --add-account <name>     # Add account
+bun run apps/tui/src/main.ts --list                   # List accounts
+bun run apps/tui/src/main.ts --remove <name>          # Remove account
+bun run apps/tui/src/main.ts --pause <name>           # Pause account
+bun run apps/tui/src/main.ts --resume <name>          # Resume account
+
+# Maintenance
+bun run apps/tui/src/main.ts --reset-stats            # Reset statistics
+bun run apps/tui/src/main.ts --clear-history          # Clear request history
+bun run apps/tui/src/main.ts --analyze                # Analyze database performance
+
+# Other options
+bun run apps/tui/src/main.ts --serve                  # Start server only
+bun run apps/tui/src/main.ts --logs [N]               # Stream logs (optionally show last N lines)
+bun run apps/tui/src/main.ts --stats                  # Show statistics (JSON)
+bun run apps/tui/src/main.ts --help                   # Show help
+
+# Add account with options
+bun run apps/tui/src/main.ts --add-account <name> --mode <max|console> --tier <1|5|20>
+```
+
+For more detailed CLI documentation, see [CLI Commands](./cli.md).
+
 ## Environment Variables
 
 ```bash
 # Server Configuration
-PORT=8080                    # Server port (default: 8080)
-LB_STRATEGY=session         # Load balancing strategy
-SESSION_DURATION=18000000   # Session duration in ms (default: 5 hours)
+PORT=8080                        # Server port (default: 8080)
+LB_STRATEGY=session             # Load balancing strategy (only 'session' supported)
+SESSION_DURATION_MS=18000000    # Session duration in ms (default: 5 hours)
+
+# OAuth Configuration
+CLIENT_ID=<your-client-id>      # Custom OAuth client ID (optional)
+
+# Retry Configuration
+RETRY_ATTEMPTS=3                # Number of retry attempts (default: 3)
+RETRY_DELAY_MS=1000            # Initial retry delay in ms (default: 1000)
+RETRY_BACKOFF=2                # Exponential backoff multiplier (default: 2)
 
 # Development
-LOG_LEVEL=info              # Logging level (debug|info|warn|error)
-NODE_ENV=production         # Environment mode
+LOG_LEVEL=info                  # Logging level (debug|info|warn|error)
+NODE_ENV=production            # Environment mode
 ```
 
 ## Related Resources

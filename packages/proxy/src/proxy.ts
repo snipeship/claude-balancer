@@ -1,43 +1,52 @@
-import crypto from "node:crypto";
-import type { RuntimeConfig } from "@ccflare/config";
-import type {
-	Account,
-	LoadBalancingStrategy,
-	RequestMeta,
-} from "@ccflare/core";
-import type { AsyncDbWriter, DatabaseOperations } from "@ccflare/database";
+import { ServiceUnavailableError } from "@ccflare/core";
 import { Logger } from "@ccflare/logger";
-import type { Provider, TokenRefreshResult } from "@ccflare/providers";
-import { forwardToClient } from "./response-handler";
+import {
+	createRequestMetadata,
+	ERROR_MESSAGES,
+	interceptAndModifyRequest,
+	type ProxyContext,
+	prepareRequestBody,
+	proxyUnauthenticated,
+	proxyWithAccount,
+	selectAccountsForRequest,
+	TIMING,
+	validateProviderPath,
+} from "./handlers";
 import type { ControlMessage } from "./worker-messages";
 
-export interface ProxyContext {
-	strategy: LoadBalancingStrategy;
-	dbOps: DatabaseOperations;
-	runtime: RuntimeConfig;
-	provider: Provider;
-	refreshInFlight: Map<string, Promise<string>>;
-	asyncWriter: AsyncDbWriter;
-	usageWorker: Worker;
-}
+export type { ProxyContext } from "./handlers";
 
 const log = new Logger("Proxy");
+
+// ===== WORKER MANAGEMENT =====
 
 // Create usage worker instance
 let usageWorkerInstance: Worker | null = null;
 
+/**
+ * Gets or creates the usage worker instance
+ * @returns The usage worker instance
+ */
 export function getUsageWorker(): Worker {
 	if (!usageWorkerInstance) {
 		usageWorkerInstance = new Worker(
 			new URL("./post-processor.worker.ts", import.meta.url).href,
 			{ smol: true },
 		);
-		// @ts-ignore - Bun extends Worker with unref
-		usageWorkerInstance.unref(); // Don't keep process alive
+		// Bun extends Worker with unref method
+		if (
+			"unref" in usageWorkerInstance &&
+			typeof usageWorkerInstance.unref === "function"
+		) {
+			usageWorkerInstance.unref(); // Don't keep process alive
+		}
 	}
 	return usageWorkerInstance;
 }
 
+/**
+ * Gracefully terminates the usage worker
+ */
 export function terminateUsageWorker(): void {
 	if (usageWorkerInstance) {
 		// Send shutdown message to allow worker to flush
@@ -49,250 +58,105 @@ export function terminateUsageWorker(): void {
 				usageWorkerInstance.terminate();
 				usageWorkerInstance = null;
 			}
-		}, 100);
+		}, TIMING.WORKER_SHUTDOWN_DELAY);
 	}
 }
 
-async function refreshAccessTokenSafe(
-	account: Account,
-	ctx: ProxyContext,
-): Promise<string> {
-	// Check if a refresh is already in progress for this account
-	if (!ctx.refreshInFlight.has(account.id)) {
-		// Create a new refresh promise and store it
-		const refreshPromise = ctx.provider
-			.refreshToken(account, ctx.runtime.clientId)
-			.then((result: TokenRefreshResult) => {
-				ctx.asyncWriter.enqueue(() =>
-					ctx.dbOps.updateAccountTokens(
-						account.id,
-						result.accessToken,
-						result.expiresAt,
-						result.refreshToken,
-					),
-				);
-				return result.accessToken;
-			})
-			.finally(() => {
-				// Clean up the map when done (success or failure)
-				ctx.refreshInFlight.delete(account.id);
-			});
-		ctx.refreshInFlight.set(account.id, refreshPromise);
-	}
+// ===== MAIN HANDLER =====
 
-	// Return the existing or new refresh promise
-	const promise = ctx.refreshInFlight.get(account.id);
-	if (!promise) {
-		throw new Error(`Refresh promise not found for account ${account.id}`);
-	}
-	return promise;
-}
-
-async function getValidAccessToken(
-	account: Account,
-	ctx: ProxyContext,
-): Promise<string> {
-	if (
-		account.access_token &&
-		account.expires_at &&
-		account.expires_at > Date.now()
-	) {
-		return account.access_token;
-	}
-	log.info(`Token expired or missing for account: ${account.name}`);
-	return await refreshAccessTokenSafe(account, ctx);
-}
-
-function getOrderedAccounts(meta: RequestMeta, ctx: ProxyContext): Account[] {
-	const allAccounts = ctx.dbOps.getAllAccounts();
-	// Filter accounts by provider
-	const providerAccounts = allAccounts.filter(
-		(account) =>
-			account.provider === ctx.provider.name || account.provider === null,
-	);
-	return ctx.strategy.select(providerAccounts, meta);
-}
-
+/**
+ * Main proxy handler - orchestrates the entire proxy flow
+ *
+ * This function coordinates the proxy process by:
+ * 1. Creating request metadata for tracking
+ * 2. Validating the provider can handle the path
+ * 3. Preparing the request body for reuse
+ * 4. Selecting accounts based on load balancing strategy
+ * 5. Attempting to proxy with each account in order
+ * 6. Falling back to unauthenticated proxy if no accounts available
+ *
+ * @param req - The incoming request
+ * @param url - The parsed URL
+ * @param ctx - The proxy context containing strategy, database, and provider
+ * @returns Promise resolving to the proxied response
+ * @throws {ValidationError} If the provider cannot handle the path
+ * @throws {ServiceUnavailableError} If all accounts fail to proxy the request
+ * @throws {ProviderError} If unauthenticated proxy fails
+ */
 export async function handleProxy(
 	req: Request,
 	url: URL,
 	ctx: ProxyContext,
 ): Promise<Response> {
-	const requestMeta: RequestMeta = {
-		id: crypto.randomUUID(),
-		method: req.method,
-		path: url.pathname,
-		timestamp: Date.now(),
+	// 1. Validate provider can handle path
+	validateProviderPath(ctx.provider, url.pathname);
+
+	// 2. Prepare request body
+	const { buffer: requestBodyBuffer } = await prepareRequestBody(req);
+
+	// 3. Intercept and modify request for agent model preferences
+	const { modifiedBody, agentUsed, originalModel, appliedModel } =
+		await interceptAndModifyRequest(requestBodyBuffer, ctx.dbOps);
+
+	// Use modified body if available
+	const finalBodyBuffer = modifiedBody || requestBodyBuffer;
+	const finalCreateBodyStream = () => {
+		if (!finalBodyBuffer) return undefined;
+		return new Response(finalBodyBuffer).body ?? undefined;
 	};
 
-	// Check if provider can handle this request
-	if (!ctx.provider.canHandle(url.pathname)) {
-		return new Response(
-			JSON.stringify({ error: "Provider cannot handle this request path" }),
-			{
-				status: 400,
-				headers: { "Content-Type": "application/json" },
-			},
-		);
-	}
-
-	// Capture request body for analytics while preserving streaming
-	let requestBodyBuffer: ArrayBuffer | null = null;
-
-	if (req.body) {
-		// Read the entire body into a buffer for storage
-		requestBodyBuffer = await req.arrayBuffer();
-	}
-
-	// Helper to create a fresh body stream for each fetch attempt
-	const createBodyStream = () => {
-		if (!requestBodyBuffer) return undefined;
-		return new Response(requestBodyBuffer).body ?? undefined;
-	};
-
-	const accounts = getOrderedAccounts(requestMeta, ctx);
-	const fallbackUnauthenticated = accounts.length === 0;
-
-	if (fallbackUnauthenticated) {
-		log.warn(
-			"No active accounts available - forwarding request without authentication",
-		);
-	} else {
+	if (agentUsed && originalModel !== appliedModel) {
 		log.info(
-			`Selected ${accounts.length} accounts for request: ${accounts.map((a) => a.name).join(", ")}`,
+			`Agent ${agentUsed} detected, model changed from ${originalModel} to ${appliedModel}`,
 		);
-		log.info(`Request: ${req.method} ${url.pathname}`);
 	}
 
-	// Handle unauthenticated fallback
-	if (fallbackUnauthenticated) {
-		const targetUrl = ctx.provider.buildUrl(url.pathname, url.search);
-		const headers = ctx.provider.prepareHeaders(req.headers); // No access token
+	// 4. Create request metadata with agent info
+	const requestMeta = createRequestMetadata(req, url);
+	requestMeta.agentUsed = agentUsed;
 
-		try {
-			const response = await fetch(targetUrl, {
-				method: req.method,
-				headers: headers,
-				body: createBodyStream(),
-				// @ts-ignore - Bun supports duplex
-				duplex: "half",
-			});
+	// 5. Select accounts
+	const accounts = selectAccountsForRequest(requestMeta, ctx);
 
-			// Use unified response handler
-			return forwardToClient(
-				{
-					requestId: requestMeta.id,
-					method: req.method,
-					path: url.pathname,
-					account: null,
-					requestHeaders: req.headers,
-					requestBody: requestBodyBuffer,
-					response,
-					timestamp: requestMeta.timestamp,
-					retryAttempt: 0,
-					failoverAttempts: 0,
-				},
-				ctx,
-			);
-		} catch (error) {
-			const errorMessage =
-				error instanceof Error ? error.message : String(error);
-			log.error("Error forwarding unauthenticated request:", error);
+	// 6. Handle no accounts case
+	if (accounts.length === 0) {
+		return proxyUnauthenticated(
+			req,
+			url,
+			requestMeta,
+			finalBodyBuffer,
+			finalCreateBodyStream,
+			ctx,
+		);
+	}
 
-			// Return error response
-			return new Response(JSON.stringify({ error: errorMessage }), {
-				status: 502,
-				headers: { "Content-Type": "application/json" },
-			});
+	// 7. Log selected accounts
+	log.info(
+		`Selected ${accounts.length} accounts: ${accounts.map((a) => a.name).join(", ")}`,
+	);
+	log.info(`Request: ${req.method} ${url.pathname}`);
+
+	// 8. Try each account
+	for (let i = 0; i < accounts.length; i++) {
+		const response = await proxyWithAccount(
+			req,
+			url,
+			accounts[i],
+			requestMeta,
+			finalBodyBuffer,
+			finalCreateBodyStream,
+			i,
+			ctx,
+		);
+
+		if (response) {
+			return response;
 		}
 	}
 
-	// Try each account in order
-	for (const account of accounts) {
-		try {
-			log.info(`Attempting request with account: ${account.name}`);
-
-			const accessToken = await getValidAccessToken(account, ctx);
-			const headers = ctx.provider.prepareHeaders(req.headers, accessToken);
-			const targetUrl = ctx.provider.buildUrl(url.pathname, url.search);
-
-			const response = await fetch(targetUrl, {
-				method: req.method,
-				headers,
-				body: createBodyStream(),
-				// @ts-ignore - Bun supports duplex
-				duplex: "half",
-			});
-
-			const isStream = ctx.provider.isStreamingResponse?.(response) ?? false;
-
-			// Parse rate-limit information
-			const rateLimitInfo = ctx.provider.parseRateLimit(response);
-
-			// Hard rate-limit ⇒ mark account + try next one
-			if (!isStream && rateLimitInfo.isRateLimited && rateLimitInfo.resetTime) {
-				log.warn(
-					`Account ${account.name} rate-limited until ${new Date(
-						rateLimitInfo.resetTime,
-					).toISOString()}`,
-				);
-				const resetTime = rateLimitInfo.resetTime; // Capture for closure
-				ctx.asyncWriter.enqueue(() =>
-					ctx.dbOps.markAccountRateLimited(account.id, resetTime),
-				);
-				continue; // try next account
-			}
-
-			// Update basic account metadata (non-blocking)
-			ctx.asyncWriter.enqueue(() => ctx.dbOps.updateAccountUsage(account.id));
-
-			// Extract tier info if provider supports it (background)
-			if (ctx.provider.extractTierInfo) {
-				const extractTierInfo = ctx.provider.extractTierInfo.bind(ctx.provider);
-				(async () => {
-					const tier = await extractTierInfo(response.clone() as Response);
-					if (tier && tier !== account.account_tier) {
-						log.info(
-							`Updating account ${account.name} tier from ${account.account_tier} to ${tier}`,
-						);
-						ctx.asyncWriter.enqueue(() =>
-							ctx.dbOps.updateAccountTier(account.id, tier),
-						);
-					}
-				})();
-			}
-
-			// Pass straight through to client with background analytics
-			return forwardToClient(
-				{
-					requestId: requestMeta.id,
-					method: req.method,
-					path: url.pathname,
-					account,
-					requestHeaders: req.headers,
-					requestBody: requestBodyBuffer,
-					response,
-					timestamp: requestMeta.timestamp,
-					retryAttempt: 0, // No retry loop anymore
-					failoverAttempts: accounts.indexOf(account),
-				},
-				ctx,
-			);
-		} catch (err) {
-			const msg = err instanceof Error ? err.message : String(err);
-			log.error(`Error with account ${account.name}: ${msg}`);
-		}
-	}
-
-	// All accounts failed
-	return new Response(
-		JSON.stringify({
-			error: "All accounts failed to proxy the request",
-			attempts: accounts.length,
-		}),
-		{
-			status: 503,
-			headers: { "Content-Type": "application/json" },
-		},
+	// 9. All accounts failed
+	throw new ServiceUnavailableError(
+		`${ERROR_MESSAGES.ALL_ACCOUNTS_FAILED} (${accounts.length} attempted)`,
+		ctx.provider.name,
 	);
 }

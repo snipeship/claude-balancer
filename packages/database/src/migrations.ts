@@ -1,4 +1,8 @@
 import type { Database } from "bun:sqlite";
+import { Logger } from "@ccflare/logger";
+import { addPerformanceIndexes } from "./performance-indexes";
+
+const log = new Logger("DatabaseMigrations");
 
 export function ensureSchema(db: Database): void {
 	// Create accounts table
@@ -31,7 +35,18 @@ export function ensureSchema(db: Database): void {
 			success BOOLEAN,
 			error_message TEXT,
 			response_time_ms INTEGER,
-			failover_attempts INTEGER DEFAULT 0
+			failover_attempts INTEGER DEFAULT 0,
+			model TEXT,
+			prompt_tokens INTEGER DEFAULT 0,
+			completion_tokens INTEGER DEFAULT 0,
+			total_tokens INTEGER DEFAULT 0,
+			cost_usd REAL DEFAULT 0,
+			output_tokens_per_second REAL,
+			input_tokens INTEGER DEFAULT 0,
+			cache_read_input_tokens INTEGER DEFAULT 0,
+			cache_creation_input_tokens INTEGER DEFAULT 0,
+			output_tokens INTEGER DEFAULT 0,
+			agent_used TEXT
 		)
 	`);
 
@@ -56,6 +71,33 @@ export function ensureSchema(db: Database): void {
 			id TEXT PRIMARY KEY,
 			json TEXT NOT NULL,
 			FOREIGN KEY (id) REFERENCES requests(id) ON DELETE CASCADE
+		)
+	`);
+
+	// Create oauth_sessions table for secure PKCE verifier storage
+	db.run(`
+		CREATE TABLE IF NOT EXISTS oauth_sessions (
+			id TEXT PRIMARY KEY,
+			account_name TEXT NOT NULL,
+			verifier TEXT NOT NULL,
+			mode TEXT NOT NULL,
+			tier INTEGER DEFAULT 1,
+			created_at INTEGER NOT NULL,
+			expires_at INTEGER NOT NULL
+		)
+	`);
+
+	// Create index for faster cleanup of expired sessions
+	db.run(
+		`CREATE INDEX IF NOT EXISTS idx_oauth_sessions_expires ON oauth_sessions(expires_at)`,
+	);
+
+	// Create agent_preferences table for storing user-defined agent settings
+	db.run(`
+		CREATE TABLE IF NOT EXISTS agent_preferences (
+			agent_id TEXT PRIMARY KEY,
+			model TEXT NOT NULL,
+			updated_at INTEGER NOT NULL
 		)
 	`);
 }
@@ -83,13 +125,13 @@ export function runMigrations(db: Database): void {
 		db.prepare(
 			"ALTER TABLE accounts ADD COLUMN rate_limited_until INTEGER",
 		).run();
-		console.log("Added rate_limited_until column to accounts table");
+		log.info("Added rate_limited_until column to accounts table");
 	}
 
 	// Add session_start column if it doesn't exist
 	if (!accountsColumnNames.includes("session_start")) {
 		db.prepare("ALTER TABLE accounts ADD COLUMN session_start INTEGER").run();
-		console.log("Added session_start column to accounts table");
+		log.info("Added session_start column to accounts table");
 	}
 
 	// Add session_request_count column if it doesn't exist
@@ -97,7 +139,7 @@ export function runMigrations(db: Database): void {
 		db.prepare(
 			"ALTER TABLE accounts ADD COLUMN session_request_count INTEGER DEFAULT 0",
 		).run();
-		console.log("Added session_request_count column to accounts table");
+		log.info("Added session_request_count column to accounts table");
 	}
 
 	// Add account_tier column if it doesn't exist
@@ -105,7 +147,7 @@ export function runMigrations(db: Database): void {
 		db.prepare(
 			"ALTER TABLE accounts ADD COLUMN account_tier INTEGER DEFAULT 1",
 		).run();
-		console.log("Added account_tier column to accounts table");
+		log.info("Added account_tier column to accounts table");
 	}
 
 	// Add paused column if it doesn't exist
@@ -113,7 +155,7 @@ export function runMigrations(db: Database): void {
 		db.prepare(
 			"ALTER TABLE accounts ADD COLUMN paused INTEGER DEFAULT 0",
 		).run();
-		console.log("Added paused column to accounts table");
+		log.info("Added paused column to accounts table");
 	}
 
 	// Add rate_limit_reset column if it doesn't exist
@@ -121,13 +163,13 @@ export function runMigrations(db: Database): void {
 		db.prepare(
 			"ALTER TABLE accounts ADD COLUMN rate_limit_reset INTEGER",
 		).run();
-		console.log("Added rate_limit_reset column to accounts table");
+		log.info("Added rate_limit_reset column to accounts table");
 	}
 
 	// Add rate_limit_status column if it doesn't exist
 	if (!accountsColumnNames.includes("rate_limit_status")) {
 		db.prepare("ALTER TABLE accounts ADD COLUMN rate_limit_status TEXT").run();
-		console.log("Added rate_limit_status column to accounts table");
+		log.info("Added rate_limit_status column to accounts table");
 	}
 
 	// Add rate_limit_remaining column if it doesn't exist
@@ -135,7 +177,7 @@ export function runMigrations(db: Database): void {
 		db.prepare(
 			"ALTER TABLE accounts ADD COLUMN rate_limit_remaining INTEGER",
 		).run();
-		console.log("Added rate_limit_remaining column to accounts table");
+		log.info("Added rate_limit_remaining column to accounts table");
 	}
 
 	// Check columns in requests table
@@ -156,7 +198,7 @@ export function runMigrations(db: Database): void {
 	// Add model column if it doesn't exist
 	if (!requestsColumnNames.includes("model")) {
 		db.prepare("ALTER TABLE requests ADD COLUMN model TEXT").run();
-		console.log("Added model column to requests table");
+		log.info("Added model column to requests table");
 	}
 
 	// Add prompt_tokens column if it doesn't exist
@@ -164,7 +206,7 @@ export function runMigrations(db: Database): void {
 		db.prepare(
 			"ALTER TABLE requests ADD COLUMN prompt_tokens INTEGER DEFAULT 0",
 		).run();
-		console.log("Added prompt_tokens column to requests table");
+		log.info("Added prompt_tokens column to requests table");
 	}
 
 	// Add completion_tokens column if it doesn't exist
@@ -172,7 +214,7 @@ export function runMigrations(db: Database): void {
 		db.prepare(
 			"ALTER TABLE requests ADD COLUMN completion_tokens INTEGER DEFAULT 0",
 		).run();
-		console.log("Added completion_tokens column to requests table");
+		log.info("Added completion_tokens column to requests table");
 	}
 
 	// Add total_tokens column if it doesn't exist
@@ -180,13 +222,13 @@ export function runMigrations(db: Database): void {
 		db.prepare(
 			"ALTER TABLE requests ADD COLUMN total_tokens INTEGER DEFAULT 0",
 		).run();
-		console.log("Added total_tokens column to requests table");
+		log.info("Added total_tokens column to requests table");
 	}
 
 	// Add cost_usd column if it doesn't exist
 	if (!requestsColumnNames.includes("cost_usd")) {
 		db.prepare("ALTER TABLE requests ADD COLUMN cost_usd REAL DEFAULT 0").run();
-		console.log("Added cost_usd column to requests table");
+		log.info("Added cost_usd column to requests table");
 	}
 
 	// Add input_tokens column if it doesn't exist
@@ -194,7 +236,7 @@ export function runMigrations(db: Database): void {
 		db.prepare(
 			"ALTER TABLE requests ADD COLUMN input_tokens INTEGER DEFAULT 0",
 		).run();
-		console.log("Added input_tokens column to requests table");
+		log.info("Added input_tokens column to requests table");
 	}
 
 	// Add cache_read_input_tokens column if it doesn't exist
@@ -202,7 +244,7 @@ export function runMigrations(db: Database): void {
 		db.prepare(
 			"ALTER TABLE requests ADD COLUMN cache_read_input_tokens INTEGER DEFAULT 0",
 		).run();
-		console.log("Added cache_read_input_tokens column to requests table");
+		log.info("Added cache_read_input_tokens column to requests table");
 	}
 
 	// Add cache_creation_input_tokens column if it doesn't exist
@@ -210,7 +252,7 @@ export function runMigrations(db: Database): void {
 		db.prepare(
 			"ALTER TABLE requests ADD COLUMN cache_creation_input_tokens INTEGER DEFAULT 0",
 		).run();
-		console.log("Added cache_creation_input_tokens column to requests table");
+		log.info("Added cache_creation_input_tokens column to requests table");
 	}
 
 	// Add output_tokens column if it doesn't exist
@@ -218,6 +260,23 @@ export function runMigrations(db: Database): void {
 		db.prepare(
 			"ALTER TABLE requests ADD COLUMN output_tokens INTEGER DEFAULT 0",
 		).run();
-		console.log("Added output_tokens column to requests table");
+		log.info("Added output_tokens column to requests table");
 	}
+
+	// Add agent_used column if it doesn't exist
+	if (!requestsColumnNames.includes("agent_used")) {
+		db.prepare("ALTER TABLE requests ADD COLUMN agent_used TEXT").run();
+		log.info("Added agent_used column to requests table");
+	}
+
+	// Add output_tokens_per_second column if it doesn't exist
+	if (!requestsColumnNames.includes("output_tokens_per_second")) {
+		db.prepare(
+			"ALTER TABLE requests ADD COLUMN output_tokens_per_second REAL",
+		).run();
+		log.info("Added output_tokens_per_second column to requests table");
+	}
+
+	// Add performance indexes
+	addPerformanceIndexes(db);
 }

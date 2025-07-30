@@ -1,9 +1,24 @@
 import type { Database } from "bun:sqlite";
 import * as cliCommands from "@ccflare/cli-commands";
-import { Config } from "@ccflare/config";
+import type { Config } from "@ccflare/config";
+import {
+	patterns,
+	sanitizers,
+	validateNumber,
+	validateString,
+} from "@ccflare/core";
 import type { DatabaseOperations } from "@ccflare/database";
-import { generatePKCE, getOAuthProvider } from "@ccflare/providers";
-import type { AccountDeleteRequest, AccountResponse } from "../types";
+import {
+	BadRequest,
+	errorResponse,
+	InternalServerError,
+	jsonResponse,
+	NotFound,
+} from "@ccflare/http-common";
+import { Logger } from "@ccflare/logger";
+import type { AccountResponse } from "../types";
+
+const log = new Logger("AccountsHandler");
 
 /**
  * Create an accounts list handler
@@ -116,9 +131,7 @@ export function createAccountsListHandler(db: Database) {
 			};
 		});
 
-		return new Response(JSON.stringify(response), {
-			headers: { "Content-Type": "application/json" },
-		});
+		return jsonResponse(response);
 	};
 }
 
@@ -128,228 +141,115 @@ export function createAccountsListHandler(db: Database) {
 export function createAccountTierUpdateHandler(dbOps: DatabaseOperations) {
 	return async (req: Request, accountId: string): Promise<Response> => {
 		try {
-			const body = (await req.json()) as { tier: number };
-			const { tier } = body;
+			const body = await req.json();
 
-			if (!tier || ![1, 5, 20].includes(tier)) {
-				return new Response(
-					JSON.stringify({ error: "Invalid tier. Must be 1, 5, or 20" }),
-					{
-						status: 400,
-						headers: { "Content-Type": "application/json" },
-					},
-				);
+			// Validate tier input
+			const tier = validateNumber(body.tier, "tier", {
+				required: true,
+				allowedValues: [1, 5, 20] as const,
+			});
+
+			if (tier === undefined) {
+				return errorResponse(BadRequest("Tier is required"));
 			}
 
 			dbOps.updateAccountTier(accountId, tier);
 
-			return new Response(JSON.stringify({ success: true, tier }), {
-				headers: { "Content-Type": "application/json" },
-			});
+			return jsonResponse({ success: true, tier });
 		} catch (_error) {
-			return new Response(
-				JSON.stringify({ error: "Failed to update account tier" }),
-				{
-					status: 500,
-					headers: { "Content-Type": "application/json" },
-				},
+			return errorResponse(
+				InternalServerError("Failed to update account tier"),
 			);
 		}
 	};
 }
 
-// Store PKCE verifiers temporarily (in production, use a proper cache)
-const pkceStore = new Map<
-	string,
-	{ verifier: string; mode: "max" | "console"; tier: number }
->();
-
 /**
- * Create an account add handler
+ * Create an account add handler (manual token addition)
+ * This is primarily used for adding accounts with existing tokens
+ * For OAuth flow, use the OAuth handlers
  */
-export function createAccountAddHandler(dbOps: DatabaseOperations) {
+export function createAccountAddHandler(
+	dbOps: DatabaseOperations,
+	_config: Config,
+) {
 	return async (req: Request): Promise<Response> => {
 		try {
-			const body = (await req.json()) as {
-				name: string;
-				mode?: "max" | "console";
-				tier?: number;
-				code?: string;
-				step?: "init" | "callback";
-			};
-			const { name, mode = "max", tier = 1, code, step = "init" } = body;
+			const body = await req.json();
 
-			if (!name || typeof name !== "string") {
-				return new Response(
-					JSON.stringify({ error: "Account name is required" }),
-					{
-						status: 400,
-						headers: { "Content-Type": "application/json" },
-					},
-				);
-			}
-
-			// Step 1: Initialize OAuth flow
-			if (step === "init") {
-				// Check if account already exists
-				const existingAccounts = dbOps.getAllAccounts();
-				if (existingAccounts.some((a) => a.name === name)) {
-					return new Response(
-						JSON.stringify({
-							error: `Account with name '${name}' already exists`,
-						}),
-						{
-							status: 400,
-							headers: { "Content-Type": "application/json" },
-						},
-					);
-				}
-
-				// Get OAuth provider
-				const oauthProvider = getOAuthProvider("anthropic");
-				if (!oauthProvider) {
-					return new Response(
-						JSON.stringify({ error: "OAuth provider not found" }),
-						{
-							status: 500,
-							headers: { "Content-Type": "application/json" },
-						},
-					);
-				}
-
-				// Generate PKCE
-				const pkce = await generatePKCE();
-				const config = new Config();
-				const runtime = config.getRuntime();
-				const oauthConfig = oauthProvider.getOAuthConfig(mode);
-				oauthConfig.clientId = runtime.clientId;
-
-				// Generate auth URL
-				const authUrl = oauthProvider.generateAuthUrl(oauthConfig, pkce);
-
-				// Store PKCE verifier for later
-				pkceStore.set(name, { verifier: pkce.verifier, mode, tier });
-
-				// Clean up old entries after 10 minutes
-				setTimeout(() => pkceStore.delete(name), 10 * 60 * 1000);
-
-				return new Response(
-					JSON.stringify({
-						success: true,
-						authUrl,
-						step: "authorize",
-					}),
-					{
-						headers: { "Content-Type": "application/json" },
-					},
-				);
-			}
-
-			// Step 2: Handle OAuth callback
-			if (step === "callback") {
-				if (!code) {
-					return new Response(
-						JSON.stringify({ error: "Authorization code is required" }),
-						{
-							status: 400,
-							headers: { "Content-Type": "application/json" },
-						},
-					);
-				}
-
-				// Get stored PKCE verifier
-				const pkceData = pkceStore.get(name);
-				if (!pkceData) {
-					return new Response(
-						JSON.stringify({
-							error: "OAuth session expired. Please try again.",
-						}),
-						{
-							status: 400,
-							headers: { "Content-Type": "application/json" },
-						},
-					);
-				}
-
-				const { verifier, mode: savedMode, tier: savedTier } = pkceData;
-
-				// Get OAuth provider
-				const oauthProvider = getOAuthProvider("anthropic");
-				if (!oauthProvider) {
-					return new Response(
-						JSON.stringify({ error: "OAuth provider not found" }),
-						{
-							status: 500,
-							headers: { "Content-Type": "application/json" },
-						},
-					);
-				}
-
-				const config = new Config();
-				const runtime = config.getRuntime();
-				const oauthConfig = oauthProvider.getOAuthConfig(savedMode);
-				oauthConfig.clientId = runtime.clientId;
-
-				// Exchange code for tokens
-				const tokens = await oauthProvider.exchangeCode(
-					code,
-					verifier,
-					oauthConfig,
-				);
-
-				// Create account in database
-				const db = dbOps.getDatabase();
-				const accountId = crypto.randomUUID();
-				db.run(
-					`
-					INSERT INTO accounts (
-						id, name, provider, refresh_token, access_token, expires_at, 
-						created_at, request_count, total_requests, account_tier
-					) VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, ?)
-					`,
-					[
-						accountId,
-						name,
-						"anthropic",
-						tokens.refreshToken,
-						tokens.accessToken,
-						tokens.expiresAt,
-						Date.now(),
-						savedTier,
-					],
-				);
-
-				// Clean up PKCE data
-				pkceStore.delete(name);
-
-				return new Response(
-					JSON.stringify({
-						success: true,
-						message: `Account '${name}' added successfully!`,
-						mode: savedMode === "max" ? "Claude Max" : "Claude Console",
-						tier: savedTier,
-					}),
-					{
-						headers: { "Content-Type": "application/json" },
-					},
-				);
-			}
-
-			return new Response(JSON.stringify({ error: "Invalid step" }), {
-				status: 400,
-				headers: { "Content-Type": "application/json" },
+			// Validate account name
+			const name = validateString(body.name, "name", {
+				required: true,
+				minLength: 1,
+				maxLength: 100,
+				pattern: patterns.accountName,
+				transform: sanitizers.trim,
 			});
+
+			if (!name) {
+				return errorResponse(BadRequest("Account name is required"));
+			}
+
+			// Validate tokens
+			const accessToken = validateString(body.accessToken, "accessToken", {
+				required: true,
+				minLength: 1,
+			});
+
+			const refreshToken = validateString(body.refreshToken, "refreshToken", {
+				required: true,
+				minLength: 1,
+			});
+
+			if (!accessToken || !refreshToken) {
+				return errorResponse(
+					BadRequest("Access token and refresh token are required"),
+				);
+			}
+
+			// Validate provider
+			const provider =
+				validateString(body.provider, "provider", {
+					allowedValues: ["anthropic"] as const,
+				}) || "anthropic";
+
+			// Validate tier
+			const tier = (validateNumber(body.tier, "tier", {
+				allowedValues: [1, 5, 20] as const,
+			}) || 1) as 1 | 5 | 20;
+
+			try {
+				// Add account directly to database
+				const accountId = crypto.randomUUID();
+				const now = Date.now();
+
+				dbOps.getDatabase().run(
+					`INSERT INTO accounts (
+						id, name, provider, refresh_token, access_token,
+						created_at, request_count, total_requests, account_tier
+					) VALUES (?, ?, ?, ?, ?, ?, 0, 0, ?)`,
+					[accountId, name, provider, refreshToken, accessToken, now, tier],
+				);
+
+				return jsonResponse({
+					success: true,
+					message: `Account ${name} added successfully`,
+					tier,
+					accountId,
+				});
+			} catch (error) {
+				if (
+					error instanceof Error &&
+					error.message.includes("already exists")
+				) {
+					return errorResponse(BadRequest(error.message));
+				}
+				return errorResponse(InternalServerError((error as Error).message));
+			}
 		} catch (error) {
-			console.error("Account add error:", error);
-			return new Response(
-				JSON.stringify({
-					error:
-						error instanceof Error ? error.message : "Failed to add account",
-				}),
-				{
-					status: 500,
-					headers: { "Content-Type": "application/json" },
-				},
+			log.error("Account add error:", error);
+			return errorResponse(
+				error instanceof Error ? error : new Error("Failed to add account"),
 			);
 		}
 	};
@@ -360,52 +260,36 @@ export function createAccountAddHandler(dbOps: DatabaseOperations) {
  */
 export function createAccountRemoveHandler(dbOps: DatabaseOperations) {
 	return async (req: Request, accountName: string): Promise<Response> => {
-		const JSON_HEADERS = { "Content-Type": "application/json" };
-
 		try {
 			// Parse and validate confirmation
-			const body = (await req.json()) as AccountDeleteRequest;
-			if (!body.confirm || body.confirm !== accountName) {
-				return new Response(
-					JSON.stringify({
-						error: "Confirmation string does not match account name",
+			const body = await req.json();
+
+			// Validate confirmation string
+			const confirm = validateString(body.confirm, "confirm", {
+				required: true,
+			});
+
+			if (confirm !== accountName) {
+				return errorResponse(
+					BadRequest("Confirmation string does not match account name", {
 						confirmationRequired: true,
 					}),
-					{
-						status: 400,
-						headers: JSON_HEADERS,
-					},
 				);
 			}
 
 			const result = cliCommands.removeAccount(dbOps, accountName);
 
 			if (!result.success) {
-				return new Response(JSON.stringify({ error: result.message }), {
-					status: 404,
-					headers: JSON_HEADERS,
-				});
+				return errorResponse(NotFound(result.message));
 			}
 
-			return new Response(
-				JSON.stringify({
-					success: true,
-					message: result.message,
-				}),
-				{
-					headers: JSON_HEADERS,
-				},
-			);
+			return jsonResponse({
+				success: true,
+				message: result.message,
+			});
 		} catch (error) {
-			return new Response(
-				JSON.stringify({
-					error:
-						error instanceof Error ? error.message : "Failed to remove account",
-				}),
-				{
-					status: 500,
-					headers: JSON_HEADERS,
-				},
+			return errorResponse(
+				error instanceof Error ? error : new Error("Failed to remove account"),
 			);
 		}
 	};
@@ -426,40 +310,22 @@ export function createAccountPauseHandler(dbOps: DatabaseOperations) {
 				.get(accountId);
 
 			if (!account) {
-				return new Response(JSON.stringify({ error: "Account not found" }), {
-					status: 404,
-					headers: { "Content-Type": "application/json" },
-				});
+				return errorResponse(NotFound("Account not found"));
 			}
 
 			const result = cliCommands.pauseAccount(dbOps, account.name);
 
 			if (!result.success) {
-				return new Response(JSON.stringify({ error: result.message }), {
-					status: 400,
-					headers: { "Content-Type": "application/json" },
-				});
+				return errorResponse(BadRequest(result.message));
 			}
 
-			return new Response(
-				JSON.stringify({
-					success: true,
-					message: result.message,
-				}),
-				{
-					headers: { "Content-Type": "application/json" },
-				},
-			);
+			return jsonResponse({
+				success: true,
+				message: result.message,
+			});
 		} catch (error) {
-			return new Response(
-				JSON.stringify({
-					error:
-						error instanceof Error ? error.message : "Failed to pause account",
-				}),
-				{
-					status: 500,
-					headers: { "Content-Type": "application/json" },
-				},
+			return errorResponse(
+				error instanceof Error ? error : new Error("Failed to pause account"),
 			);
 		}
 	};
@@ -480,40 +346,22 @@ export function createAccountResumeHandler(dbOps: DatabaseOperations) {
 				.get(accountId);
 
 			if (!account) {
-				return new Response(JSON.stringify({ error: "Account not found" }), {
-					status: 404,
-					headers: { "Content-Type": "application/json" },
-				});
+				return errorResponse(NotFound("Account not found"));
 			}
 
 			const result = cliCommands.resumeAccount(dbOps, account.name);
 
 			if (!result.success) {
-				return new Response(JSON.stringify({ error: result.message }), {
-					status: 400,
-					headers: { "Content-Type": "application/json" },
-				});
+				return errorResponse(BadRequest(result.message));
 			}
 
-			return new Response(
-				JSON.stringify({
-					success: true,
-					message: result.message,
-				}),
-				{
-					headers: { "Content-Type": "application/json" },
-				},
-			);
+			return jsonResponse({
+				success: true,
+				message: result.message,
+			});
 		} catch (error) {
-			return new Response(
-				JSON.stringify({
-					error:
-						error instanceof Error ? error.message : "Failed to resume account",
-				}),
-				{
-					status: 500,
-					headers: { "Content-Type": "application/json" },
-				},
+			return errorResponse(
+				error instanceof Error ? error : new Error("Failed to resume account"),
 			);
 		}
 	};

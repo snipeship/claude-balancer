@@ -1,3 +1,8 @@
+import {
+	errorResponse,
+	InternalServerError,
+	jsonResponse,
+} from "@ccflare/http-common";
 import { logFileWriter } from "@ccflare/logger";
 
 /**
@@ -9,17 +14,9 @@ export function createLogsHistoryHandler() {
 			// Get the last 1000 logs by default
 			const logs = await logFileWriter.readLogs(1000);
 
-			return new Response(JSON.stringify(logs), {
-				headers: { "Content-Type": "application/json" },
-			});
+			return jsonResponse(logs);
 		} catch (_error) {
-			return new Response(
-				JSON.stringify({ error: "Failed to fetch log history" }),
-				{
-					status: 500,
-					headers: { "Content-Type": "application/json" },
-				},
-			);
+			return errorResponse(InternalServerError("Failed to fetch log history"));
 		}
 	};
 }

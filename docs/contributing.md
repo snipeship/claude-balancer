@@ -149,6 +149,16 @@ bun run typecheck
 bun run format
 ```
 
+### CLAUDE.md File
+
+The project includes a `CLAUDE.md` file in the root directory that provides guidance to Claude Code (claude.ai/code) when working with the codebase. This file contains:
+- Project overview and purpose
+- Important commands to run after making changes
+- Development and maintenance commands
+- Project-specific guidelines
+
+When contributing, ensure any major architectural changes or new patterns are documented in CLAUDE.md to help future AI-assisted development.
+
 ## Project Structure
 
 ccflare is organized as a Bun monorepo with clear separation of concerns:
@@ -450,7 +460,7 @@ Closes #(issue number)
 4. **Documentation**: Ensure docs are updated if needed
 5. **Merge**: Maintainer will merge using "Squash and merge"
 
-**Note**: CI/CD is not yet implemented. Contributors must ensure all checks pass locally before submitting PRs.
+**Note**: CI/CD is not yet implemented. Contributors must ensure all checks pass locally before submitting PRs. There is also no PR template in the repository yet - please follow the template provided in this guide when creating PRs.
 
 ### After PR is Merged
 
@@ -623,7 +633,7 @@ We use semantic versioning (SemVer):
 1. **Prepare Release**
    ```bash
    # Update version in package.json files
-   # Update CHANGELOG.md
+   # Create/Update CHANGELOG.md (if not exists, create following Keep a Changelog format)
    git checkout -b release/vX.Y.Z
    ```
 
@@ -649,6 +659,8 @@ We use semantic versioning (SemVer):
    - Announce in discussions/Discord
    - Update documentation site
    - Monitor for issues
+
+**Note**: There is no CHANGELOG.md file in the repository yet. When implementing releases, create and maintain a CHANGELOG.md file following the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ### Emergency Patches
 
@@ -677,23 +689,48 @@ Contributors are recognized in:
 
 ### Working with the CLI
 
-The CLI supports the following commands:
+The CLI functionality is integrated into the TUI application. Use `ccflare` with command-line flags:
 
 ```bash
+# If ccflare is not installed globally, use:
+# bun run tui [options]
+# or build and run with: bun run ccflare
+
 # Add a new account
-bun cli add <name>
+ccflare --add-account <name>
+# With options:
+ccflare --add-account <name> --mode <max|console> --tier <1|5|20>
 
 # List all accounts
-bun cli list
+ccflare --list
 
 # Remove an account
-bun cli remove <name>
+ccflare --remove <name>
+
+# Pause/resume accounts
+ccflare --pause <name>
+ccflare --resume <name>
 
 # Reset usage statistics
-bun cli reset-stats
+ccflare --reset-stats
 
 # Clear request history
-bun cli clear-history
+ccflare --clear-history
+
+# View statistics (JSON output)
+ccflare --stats
+
+# Stream logs
+ccflare --logs [N]  # Show N lines of history then follow
+
+# Analyze database performance
+ccflare --analyze
+
+# Start server with dashboard
+ccflare --serve --port 8080
+
+# Show help
+ccflare --help
 ```
 
 ### Running the Server
@@ -701,6 +738,10 @@ bun cli clear-history
 ```bash
 # Start the production server (port 8080)
 bun run server
+# or
+bun run start
+# or
+bun start
 
 # Start the server with hot reload
 bun run dev:server

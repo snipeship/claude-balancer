@@ -14,6 +14,7 @@
 		"@ccflare/core-di": "workspace:*",
 		"@ccflare/database": "workspace:*",
 		"@ccflare/config": "workspace:*",
-		"@ccflare/providers": "workspace:*"
+		"@ccflare/providers": "workspace:*",
+		"@ccflare/oauth-flow": "workspace:*"
 	}
 }

@@ -1,3 +1,5 @@
+import { BUFFER_SIZES } from "@ccflare/core";
+
 /**
  * Tees a ReadableStream to capture data without blocking the original stream.
  * Allows buffering stream content for analytics while maintaining streaming performance.
@@ -11,7 +13,12 @@ export function teeStream(
 		maxBytes?: number; // Max bytes to buffer (default: 1MB)
 	} = {},
 ): ReadableStream<Uint8Array> {
-	const { onChunk, onClose, onError, maxBytes = 1024 * 1024 } = options;
+	const {
+		onChunk,
+		onClose,
+		onError,
+		maxBytes = BUFFER_SIZES.STREAM_TEE_MAX_BYTES,
+	} = options;
 	const reader = upstream.getReader();
 	const buffered: Uint8Array[] = [];
 	let totalBytes = 0;

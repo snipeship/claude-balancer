@@ -4,40 +4,75 @@
 1. [Overview](#overview)
 2. [Session-Based Strategy](#session-based-strategy)
 3. [Configuration](#configuration)
-4. [Performance Considerations](#performance-considerations)
-5. [Important: Why Only Session-Based Strategy](#important-why-only-session-based-strategy)
+4. [Account Selection Process](#account-selection-process)
+5. [Performance Considerations](#performance-considerations)
+6. [Important: Why Only Session-Based Strategy](#important-why-only-session-based-strategy)
 
 ## Overview
 
-ccflare implements a session-based load balancing system to distribute requests across multiple Claude OAuth accounts, avoiding rate limits and ensuring high availability. The system maintains 5-hour sessions with individual accounts to minimize rate limit issues.
+ccflare implements a session-based load balancing system to distribute requests across multiple Claude OAuth accounts, avoiding rate limits and ensuring high availability. The system maintains configurable sessions (default: 5 hours) with individual accounts to minimize rate limit issues.
 
 ### Key Features
 - **Account Health Monitoring**: Automatically filters out rate-limited or paused accounts
 - **Failover Support**: Returns ordered lists of accounts for automatic failover
-- **Session Persistence**: Maintains 5-hour sessions on specific accounts
+- **Session Persistence**: Maintains configurable sessions on specific accounts
 - **Real-time Configuration**: Change settings without restarting the server
-- **Async Database Operations**: Non-blocking database writes via AsyncDbWriter
+- **Provider Filtering**: Accounts are filtered by provider compatibility
 
 ## Session-Based Strategy
 
-**Description**: Maintains sticky sessions with individual accounts for a configurable duration (default: 5 hours). This strategy minimizes account switching to reduce the likelihood of hitting rate limits.
+**Description**: Maintains sticky sessions with individual accounts for a configurable duration (default: 5 hours). This is the only load balancing strategy available in ccflare, designed to minimize account switching and reduce the likelihood of hitting rate limits.
 
 **Use Case**: Optimal for production environments where minimizing rate limits is crucial. Particularly effective for applications with sustained user sessions.
 
-**Implementation**:
+**Implementation Details**:
 ```typescript
 export class SessionStrategy implements LoadBalancingStrategy {
     private sessionDurationMs: number;
     private store: StrategyStore | null = null;
     private log = new Logger("SessionStrategy");
 
-    constructor(sessionDurationMs: number = 5 * 60 * 60 * 1000) {
+    constructor(sessionDurationMs: number = TIME_CONSTANTS.SESSION_DURATION_DEFAULT) {
         this.sessionDurationMs = sessionDurationMs;
     }
 
+    initialize(store: StrategyStore): void {
+        this.store = store;
+    }
+
     select(accounts: Account[], _meta: RequestMeta): Account[] {
-        // Logic to maintain session with active account
-        // Falls back to new account when session expires or account unavailable
+        const now = Date.now();
+        
+        // Find account with most recent active session
+        let activeAccount: Account | null = null;
+        let mostRecentSessionStart = 0;
+        
+        for (const account of accounts) {
+            if (account.session_start && 
+                now - account.session_start < this.sessionDurationMs &&
+                account.session_start > mostRecentSessionStart) {
+                activeAccount = account;
+                mostRecentSessionStart = account.session_start;
+            }
+        }
+        
+        // Use active account if available
+        if (activeAccount && isAccountAvailable(activeAccount, now)) {
+            const others = accounts.filter(
+                a => a.id !== activeAccount.id && isAccountAvailable(a, now)
+            );
+            return [activeAccount, ...others]; // Active account first, others as fallback
+        }
+        
+        // No active session - start new one with first available account
+        const available = accounts.filter(a => isAccountAvailable(a, now));
+        if (available.length === 0) return [];
+        
+        const chosenAccount = available[0];
+        this.resetSessionIfExpired(chosenAccount);
+        
+        const others = available.filter(a => a.id !== chosenAccount.id);
+        return [chosenAccount, ...others];
     }
 }
 ```
@@ -51,44 +86,137 @@ export class SessionStrategy implements LoadBalancingStrategy {
 
 ## Configuration
 
+ccflare uses a hierarchical configuration system where environment variables take precedence over configuration file settings.
+
+### Configuration Precedence (highest to lowest)
+1. Environment variables
+2. Configuration file (`~/.ccflare/config.json`)
+3. Default values
+
 ### Environment Variables
 
 ```bash
 # Load balancing strategy (only 'session' is supported)
 LB_STRATEGY=session
 
-# Session duration in milliseconds (default: 5 hours)
+# Session duration in milliseconds (default: 18000000ms = 5 hours)
 SESSION_DURATION_MS=18000000
 
-# Server port
+# Server port (default: 8080)
 PORT=8080
+
+# Client ID for OAuth (default: 9d1c250a-e61b-44d9-88ed-5944d1962f5e)
+CLIENT_ID=your-client-id
+
+# Retry configuration
+RETRY_ATTEMPTS=3
+RETRY_DELAY_MS=1000
+RETRY_BACKOFF=2
 ```
 
 ### Configuration File
 
-Create `~/.ccflare/config.json`:
+The configuration file is automatically created at `~/.ccflare/config.json` on first run:
 
 ```json
 {
     "lb_strategy": "session",
     "session_duration_ms": 18000000,
-    "port": 8080
+    "port": 8080,
+    "client_id": "9d1c250a-e61b-44d9-88ed-5944d1962f5e",
+    "retry_attempts": 3,
+    "retry_delay_ms": 1000,
+    "retry_backoff": 2
 }
 ```
+
+### Time Constants
+
+The following time constants are used throughout the system:
+- `SESSION_DURATION_DEFAULT`: 18000000ms (5 hours)
+- `SESSION_DURATION_FALLBACK`: 3600000ms (1 hour) - used if configuration is invalid
 
 ### Dynamic Configuration
 
 The strategy configuration can be changed at runtime via the HTTP API:
 
 ```bash
-# Update configuration
+# Get current strategy
+curl http://localhost:8080/api/config/strategy
+
+# Update strategy (only 'session' is valid)
 curl -X PUT http://localhost:8080/api/config/strategy \
   -H "Content-Type: application/json" \
   -d '{"strategy": "session"}'
 
-# Get current configuration
-curl http://localhost:8080/api/config/strategy
+# Get all configuration settings
+curl http://localhost:8080/api/config
+
+# Get available strategies
+curl http://localhost:8080/api/config/strategies
 ```
+
+## Account Selection Process
+
+The load balancer follows a specific process when selecting accounts for requests:
+
+### 1. Account Filtering
+```typescript
+// From proxy/handlers/account-selector.ts
+const providerAccounts = allAccounts.filter(
+    (account) => account.provider === ctx.provider.name || account.provider === null
+);
+```
+- Accounts are first filtered by provider compatibility
+- Only accounts matching the current provider or with null provider are considered
+
+### 2. Availability Check
+```typescript
+// From core/strategy.ts
+export function isAccountAvailable(account: Account, now = Date.now()): boolean {
+    return (
+        !account.paused &&
+        (!account.rate_limited_until || account.rate_limited_until < now)
+    );
+}
+```
+- Paused accounts are excluded
+- Rate-limited accounts are excluded if their rate limit hasn't expired
+
+### 3. Session Management
+The SessionStrategy manages account sessions through the following process:
+
+1. **Active Session Search**: Finds the account with the most recent active session
+2. **Session Validation**: Checks if the session is within the configured duration
+3. **Account Ordering**: Returns accounts in priority order:
+   - Active session account (if available) comes first
+   - Other available accounts follow as fallback options
+
+### 4. Session Reset
+Sessions are reset when:
+- No active session exists
+- The current session has expired
+- A new account needs to be selected
+
+```typescript
+private resetSessionIfExpired(account: Account): void {
+    const now = Date.now();
+    
+    if (!account.session_start || 
+        now - account.session_start >= this.sessionDurationMs) {
+        // Reset session via StrategyStore
+        this.store.resetAccountSession(account.id, now);
+        account.session_start = now;
+        account.session_request_count = 0;
+    }
+}
+```
+
+### 5. Database Updates
+The StrategyStore interface provides methods for session management:
+- `resetAccountSession(accountId, timestamp)`: Resets session start time and request count
+- `updateAccountRequestCount(accountId, count)`: Updates request count for an account
+- `getAccount(accountId)`: Retrieves account information
 
 ## Performance Considerations
 
@@ -100,19 +228,14 @@ The session strategy provides excellent rate limit avoidance at the cost of pote
 - **Load Distribution**: Load may concentrate on fewer accounts during a session window. This is acceptable for most use cases but should be monitored.
 - **Failover**: If the active session account becomes unavailable, the system automatically fails over to the next available account.
 
-### Database Performance
+### Session Storage
 
-All strategies use the `AsyncDbWriter` for non-blocking database operations:
+Session information is stored directly in the database with the following fields:
+- `session_start`: Timestamp when the current session began
+- `session_request_count`: Number of requests in the current session
+- `rate_limited_until`: Timestamp when rate limiting expires (if applicable)
 
-```typescript
-// Async write example - doesn't block request processing
-asyncWriter.writeRequest({
-    requestId,
-    accountId: account.id,
-    timestamp: Date.now(),
-    // ... other fields
-});
-```
+These fields are updated synchronously to ensure consistency in account selection.
 
 ### Monitoring
 
@@ -124,9 +247,9 @@ Monitor these key metrics:
 
 ## Important: Why Only Session-Based Strategy
 
-**⚠️ WARNING: You should only use the session-based load balancer strategy.**
+**⚠️ WARNING: Only the session-based load balancer strategy is available in ccflare.**
 
-Other strategies like round-robin, least-requests, or weighted distribution can trigger Claude's anti-abuse systems and result in automatic account bans. Here's why:
+Other strategies like round-robin, least-requests, or weighted distribution have been removed from the codebase as they can trigger Claude's anti-abuse systems and result in automatic account bans. Here's why they were removed:
 
 ### Account Ban Risks
 
@@ -158,3 +281,34 @@ If you need different behavior, adjust the session duration rather than switchin
     "session_duration_ms": 18000000  // 5 hours (recommended)
 }
 ```
+
+## LoadBalancingStrategy Interface
+
+For reference, here's the interface that all load balancing strategies must implement:
+
+```typescript
+// From types/context.ts
+export interface LoadBalancingStrategy {
+    /**
+     * Return a filtered & ordered list of candidate accounts.
+     * Accounts that are rate-limited should be filtered out.
+     * The first account in the list should be tried first.
+     */
+    select(accounts: Account[], meta: RequestMeta): Account[];
+
+    /**
+     * Optional initialization method to inject dependencies
+     * Used for strategies that need access to a StrategyStore
+     */
+    initialize?(store: StrategyStore): void;
+}
+```
+
+The `RequestMeta` object contains:
+- `id`: Unique request identifier
+- `method`: HTTP method
+- `path`: Request path
+- `timestamp`: Request timestamp
+- `agentUsed`: Optional agent identifier
+
+Currently, only the `SessionStrategy` implementation exists in the codebase at `/packages/load-balancer/src/strategies/index.ts`.

@@ -1,9 +1,11 @@
 #!/usr/bin/env bun
 import { Config } from "@ccflare/config";
-import { shutdown } from "@ccflare/core";
+import { NETWORK, shutdown } from "@ccflare/core";
 import { container, SERVICE_KEYS } from "@ccflare/core-di";
 import { DatabaseFactory } from "@ccflare/database";
 import { Logger } from "@ccflare/logger";
+// Import server
+import startServer from "@ccflare/server";
 import * as tuiCore from "@ccflare/tui-core";
 import { parseArgs } from "@ccflare/tui-core";
 import { render } from "ink";
@@ -11,11 +13,11 @@ import React from "react";
 import { App } from "./App";
 
 // Global singleton for auto-started server
-let runningServer: tuiCore.ServeResult | null = null;
+let runningServer: ReturnType<typeof startServer> | null = null;
 
 async function ensureServer(port: number) {
 	if (!runningServer) {
-		runningServer = await tuiCore.serve({ port, withDashboard: true });
+		runningServer = startServer({ port, withDashboard: true });
 	}
 	return runningServer;
 }
@@ -42,6 +44,7 @@ Usage: ccflare [options]
 
 Options:
   --serve              Start API server with dashboard
+  --port <number>      Server port (default: 8080, or PORT env var)
   --logs [N]           Stream latest N lines then follow
   --stats              Show statistics (JSON output)
   --add-account <name> Add a new account
@@ -49,6 +52,9 @@ Options:
     --tier <1|5|20>       Account tier (default: 1)
   --list               List all accounts
   --remove <name>      Remove an account
+  --pause <name>       Pause an account
+  --resume <name>      Resume an account
+  --analyze            Analyze database performance
   --reset-stats        Reset usage statistics
   --clear-history      Clear request history
   --help, -h           Show this help message
@@ -60,6 +66,8 @@ Examples:
   ccflare                        # Interactive mode
   ccflare --serve                # Start server
   ccflare --add-account work     # Add account
+  ccflare --pause work           # Pause account
+  ccflare --analyze              # Run performance analysis
   ccflare --stats                # View stats
 `);
 		process.exit(0);
@@ -67,12 +75,28 @@ Examples:
 
 	// Handle non-interactive commands
 	if (parsed.serve) {
-		await tuiCore.serve({ port: parsed.port });
+		const config = new Config();
+		const port =
+			parsed.port || config.getRuntime().port || NETWORK.DEFAULT_PORT;
+		startServer({ port, withDashboard: true });
+		// Keep process alive
+		await new Promise(() => {});
 		return;
 	}
 
 	if (parsed.logs !== undefined) {
-		const _limit = typeof parsed.logs === "number" ? parsed.logs : 100;
+		const limit = typeof parsed.logs === "number" ? parsed.logs : 100;
+
+		// First print historical logs if limit was specified
+		if (typeof parsed.logs === "number") {
+			const history = await tuiCore.getLogHistory(limit);
+			for (const log of history) {
+				console.log(`[${log.level}] ${log.msg}`);
+			}
+			console.log("--- Live logs ---");
+		}
+
+		// Then stream live logs
 		await tuiCore.streamLogs((log) => {
 			console.log(`[${log.level}] ${log.msg}`);
 		});
@@ -126,14 +150,39 @@ Examples:
 		return;
 	}
 
+	if (parsed.pause) {
+		const result = await tuiCore.pauseAccount(parsed.pause);
+		console.log(result.message);
+		if (!result.success) {
+			process.exit(1);
+		}
+		return;
+	}
+
+	if (parsed.resume) {
+		const result = await tuiCore.resumeAccount(parsed.resume);
+		console.log(result.message);
+		if (!result.success) {
+			process.exit(1);
+		}
+		return;
+	}
+
+	if (parsed.analyze) {
+		await tuiCore.analyzePerformance();
+		return;
+	}
+
 	// Default: Launch interactive TUI with auto-started server
-	await ensureServer(parsed.port || 8080);
+	const config = new Config();
+	const port = parsed.port || config.getRuntime().port || NETWORK.DEFAULT_PORT;
+	await ensureServer(port);
 	const { waitUntilExit } = render(React.createElement(App));
 	await waitUntilExit();
 
 	// Cleanup server when TUI exits
 	if (runningServer) {
-		runningServer.cleanup();
+		runningServer.stop();
 	}
 
 	// Shutdown all resources

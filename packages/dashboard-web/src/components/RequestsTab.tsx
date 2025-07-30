@@ -1,6 +1,13 @@
+import {
+	formatCost,
+	formatDuration,
+	formatTokens,
+	formatTokensPerSecond,
+} from "@ccflare/ui-common";
 import { ChevronDown, ChevronRight, Eye, RefreshCw } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
-import { api, type RequestPayload, type RequestSummary } from "../api";
+import { useState } from "react";
+import type { RequestPayload, RequestSummary } from "../api";
+import { useRequests } from "../hooks/queries";
 import { CopyButton } from "./CopyButton";
 import { RequestDetailsModal } from "./RequestDetailsModal";
 import { TokenUsageDisplay } from "./TokenUsageDisplay";
@@ -15,65 +22,29 @@ import {
 } from "./ui/card";
 
 export function RequestsTab() {
-	const [requests, setRequests] = useState<RequestPayload[]>([]);
-	const [summaries, setSummaries] = useState<Map<string, RequestSummary>>(
-		new Map(),
-	);
-	const [loading, setLoading] = useState(true);
-	const [error, setError] = useState<string | null>(null);
 	const [expandedRequests, setExpandedRequests] = useState<Set<string>>(
 		new Set(),
 	);
 	const [modalRequest, setModalRequest] = useState<RequestPayload | null>(null);
-	const [loadingModal, setLoadingModal] = useState(false);
 
-	const loadRequests = useCallback(async () => {
-		try {
-			// Use the optimized detail handler that returns summary data without full payloads
-			const detailData = await api.getRequestsDetail(200);
-			setRequests(detailData);
+	const {
+		data: requestsData,
+		isLoading: loading,
+		error,
+		refetch: loadRequests,
+	} = useRequests(200);
 
-			// Extract summary data from the response
-			const summaryMap = new Map<string, RequestSummary>();
-			detailData.forEach((request: any) => {
-				if (request.summary) {
-					summaryMap.set(request.id, request.summary);
-				}
-			});
-			setSummaries(summaryMap);
-
-			setError(null);
-		} catch (err) {
-			setError(err instanceof Error ? err.message : "Failed to load requests");
-		} finally {
-			setLoading(false);
-		}
-	}, []);
-
-	const openRequestModal = useCallback(async (requestSummary: any) => {
-		setLoadingModal(true);
-		try {
-			// Fetch the full payload data for this request
-			const fullPayload = await api.getRequestPayload(requestSummary.id);
-			setModalRequest(fullPayload);
-		} catch (err) {
-			console.error("Failed to load request details:", err);
-			// Fallback: show what we have with empty request/response
-			setModalRequest({
-				...requestSummary,
-				request: { headers: {}, body: null },
-				response: requestSummary.response || null,
-			});
-		} finally {
-			setLoadingModal(false);
-		}
-	}, []);
-
-	useEffect(() => {
-		loadRequests();
-		const interval = setInterval(loadRequests, 10000);
-		return () => clearInterval(interval);
-	}, [loadRequests]);
+	// Transform the data to match the expected structure
+	const data = requestsData
+		? {
+				requests: requestsData.requests,
+				summaries: new Map(
+					requestsData.detailsMap.map(
+						(s: RequestSummary) => [s.id, s] as [string, RequestSummary],
+					),
+				),
+			}
+		: null;
 
 	const toggleExpanded = (id: string) => {
 		setExpandedRequests((prev) => {
@@ -87,7 +58,19 @@ export function RequestsTab() {
 		});
 	};
 
-	// TODO: Re-implement decodeBase64 when implementing full payload copy functionality
+	const decodeBase64 = (str: string | null): string => {
+		if (!str) return "No data";
+		try {
+			// Handle edge cases like "[streamed]" from older data
+			if (str === "[streamed]") {
+				return "[Streaming data not captured]";
+			}
+			return atob(str);
+		} catch (error) {
+			console.error("Failed to decode base64:", error, "Input:", str);
+			return `Failed to decode: ${str}`;
+		}
+	};
 
 	/**
 	 * Copy the given request to the clipboard as pretty-printed JSON, with
@@ -109,9 +92,11 @@ export function RequestsTab() {
 		return (
 			<Card>
 				<CardContent className="pt-6">
-					<p className="text-destructive">Error: {error}</p>
+					<p className="text-destructive">
+						Error: {error instanceof Error ? error.message : String(error)}
+					</p>
 					<Button
-						onClick={loadRequests}
+						onClick={() => loadRequests()}
 						variant="outline"
 						size="sm"
 						className="mt-2"
@@ -134,21 +119,21 @@ export function RequestsTab() {
 							Detailed request and response data (last 200)
 						</CardDescription>
 					</div>
-					<Button onClick={loadRequests} variant="ghost" size="sm">
+					<Button onClick={() => loadRequests()} variant="ghost" size="sm">
 						<RefreshCw className="h-4 w-4" />
 					</Button>
 				</div>
 			</CardHeader>
 			<CardContent>
-				{requests.length === 0 ? (
+				{!data || data.requests.length === 0 ? (
 					<p className="text-muted-foreground">No requests found</p>
 				) : (
 					<div className="space-y-2">
-						{requests.map((request) => {
+						{data.requests.map((request) => {
 							const isExpanded = expandedRequests.has(request.id);
 							const isError = request.error || !request.meta.success;
 							const statusCode = request.response?.status;
-							const summary = summaries.get(request.id);
+							const summary = data.summaries.get(request.id);
 
 							return (
 								<div
@@ -189,16 +174,27 @@ export function RequestsTab() {
 													{summary.model}
 												</Badge>
 											)}
+											{summary?.agentUsed && (
+												<Badge variant="secondary" className="text-xs">
+													Agent: {summary.agentUsed}
+												</Badge>
+											)}
 											{summary?.totalTokens && (
 												<Badge variant="outline" className="text-xs">
-													{summary.totalTokens.toLocaleString()} tokens
+													{formatTokens(summary.totalTokens)} tokens
 												</Badge>
 											)}
 											{summary?.costUsd && summary.costUsd > 0 && (
 												<Badge variant="default" className="text-xs">
-													${summary.costUsd.toFixed(4)}
+													{formatCost(summary.costUsd)}
 												</Badge>
 											)}
+											{summary?.tokensPerSecond &&
+												summary.tokensPerSecond > 0 && (
+													<Badge variant="secondary" className="text-xs">
+														{formatTokensPerSecond(summary.tokensPerSecond)}
+													</Badge>
+												)}
 											{(request.meta.accountName || request.meta.accountId) && (
 												<span className="text-sm text-muted-foreground">
 													via{" "}
@@ -219,7 +215,7 @@ export function RequestsTab() {
 										</div>
 										<div className="text-sm text-muted-foreground flex items-center gap-2">
 											{summary?.responseTimeMs && (
-												<span>{summary.responseTimeMs}ms</span>
+												<span>{formatDuration(summary.responseTimeMs)}</span>
 											)}
 											{request.meta.retry !== undefined &&
 												request.meta.retry > 0 && (
@@ -234,24 +230,35 @@ export function RequestsTab() {
 										<Button
 											variant="ghost"
 											size="icon"
-											onClick={() => openRequestModal(request)}
+											onClick={() => setModalRequest(request)}
 											title="View Details"
-											disabled={loadingModal}
 										>
-											{loadingModal ? (
-												<RefreshCw className="h-4 w-4 animate-spin" />
-											) : (
-												<Eye className="h-4 w-4" />
-											)}
+											<Eye className="h-4 w-4" />
 										</Button>
 										<CopyButton
 											variant="ghost"
 											size="icon"
 											title="Copy as JSON"
 											getValue={() => {
-												// For now, just copy the summary data
-												// TODO: Implement async copy with full payload data
-												return JSON.stringify(request, null, 2);
+												const decoded: RequestPayload & { decoded?: true } = {
+													...request,
+													request: {
+														...request.request,
+														body: request.request.body
+															? decodeBase64(request.request.body)
+															: null,
+													},
+													response: request.response
+														? {
+																...request.response,
+																body: request.response.body
+																	? decodeBase64(request.response.body)
+																	: null,
+															}
+														: null,
+													decoded: true,
+												};
+												return JSON.stringify(decoded, null, 2);
 											}}
 										/>
 									</div>
@@ -280,7 +287,7 @@ export function RequestsTab() {
 			{modalRequest && (
 				<RequestDetailsModal
 					request={modalRequest}
-					summary={summaries.get(modalRequest.id)}
+					summary={data?.summaries.get(modalRequest.id)}
 					isOpen={true}
 					onClose={() => setModalRequest(null)}
 				/>

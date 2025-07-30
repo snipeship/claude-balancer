@@ -9,8 +9,10 @@ The ccflare Terminal User Interface (TUI) provides an interactive way to manage 
 - **Interactive Navigation**: Menu-driven interface with intuitive keyboard shortcuts
 - **Real-time Updates**: Live monitoring of requests, logs, and statistics
 - **Account Management**: Add, remove, and monitor OAuth accounts with PKCE flow
-- **Request History**: View detailed request/response information with token usage
+- **Request History**: View detailed request/response information with token usage, costs, and model names
 - **Statistics Dashboard**: Track usage, costs, token metrics, and performance
+- **Analytics Dashboard**: Advanced visualizations with charts, time-range selection, and multiple views
+- **Load Balancer Strategy**: View and change the active load balancing strategy
 - **Log Streaming**: Real-time log viewer with pause/resume and historical logs
 - **Auto-start Server**: The API server starts automatically when launching the TUI
 - **Graceful Shutdown**: Proper cleanup of resources on exit
@@ -60,10 +62,15 @@ bun run dev --stats
 bun run dev --add-account <name> [--mode max|console] [--tier 1|5|20]
 bun run dev --list
 bun run dev --remove <name>
+bun run dev --pause <name>
+bun run dev --resume <name>
 
 # Maintenance
 bun run dev --reset-stats
 bun run dev --clear-history
+
+# Performance analysis
+bun run dev --analyze
 ```
 
 ## Navigation and Keyboard Shortcuts
@@ -71,6 +78,7 @@ bun run dev --clear-history
 ### Global Navigation
 
 - **Arrow Keys (↑/↓)**: Navigate through menu items in SelectInput components
+- **Arrow Keys (←/→)**: Navigate between pages in paginated views
 - **Enter**: Select the highlighted option
 - **ESC**: Go back to the previous screen or cancel operations
 - **q**: Quit the current screen (works in list/view screens)
@@ -98,11 +106,13 @@ bun run dev --clear-history
   - Type authorization code and press Enter
 
 #### Request History Screen
-- **↑/↓**: Navigate through requests (shows latest 15 with pagination indicator)
+- **↑/↓**: Navigate through requests (shows 10 items per page)
+- **←/→**: Navigate between pages
 - **Enter/Space**: View detailed information for selected request
 - **r**: Manually refresh the request list
 - **q/ESC**: Go back (or exit details view if open)
 - Auto-refreshes every 10 seconds
+- Displays model name, token count, and cost for each request
 
 #### Statistics Dashboard Screen
 - **r**: Manually refresh statistics
@@ -131,8 +141,10 @@ Select an option:
   🚀 Server
   👥 Manage Accounts
   📊 View Statistics
+  📈 Analytics Dashboard
   📜 View Requests
   📋 View Logs
+  ⚖️  Load Balancer
   ❌ Exit
 ```
 
@@ -220,12 +232,16 @@ Use ↑/↓ to navigate, ENTER to view details
 Press 'r' to refresh • 'q' or ESC to go back
 ```
 
-The screen displays the latest 15 requests with:
+The screen displays 10 requests per page with:
 - Timestamp (local time)
 - Status code with color coding (green: 2xx, yellow: 4xx, red: 5xx/errors)
-- Account ID (truncated to 8 characters)
+- Account name or ID (truncated to 8 characters)
+- Model name (e.g., "opus", "sonnet", "haiku")
+- Token count
+- Cost in USD
 - Rate limit indicators
-- Error messages (truncated to 30 characters)
+- Error messages (truncated to 20 characters)
+- Page navigation with ←/→ arrows
 
 #### Detail View
 
@@ -237,8 +253,18 @@ Press Enter or Space on a request to see:
 ID: req_abc123...
 Time: 10:23:45 AM
 Account: work-account
+Model: claude-3.5-sonnet
+Response Time: 1234ms
 Retry: 1
 Rate Limited
+
+Token Usage:
+  Input: 1,234 tokens
+  Cache Read: 123 tokens  
+  Cache Creation: 12 tokens
+  Output: 456 tokens
+  Total: 1,825 tokens
+  Cost: $0.0234
 
 Request Headers:
   content-type: application/json
@@ -293,7 +319,90 @@ Features:
 - Lists up to 5 recent errors
 - Account-specific request counts and success rates
 
-### 6. Logs Viewer Screen
+### 6. Analytics Dashboard Screen
+
+Advanced analytics with interactive charts and visualizations:
+
+```
+📈 Analytics Dashboard - Last 24 Hours                    View: overview
+
+Time: [1] 1h [2] 6h [3] 24h [4] 7d | View: [o]verview [t]okens [p]erf [c]ost [d]models
+
+Request Volume & Performance
+
+Requests ▁▂▃▄▅▆▇█▇▆▅▄▃▂▁ Current: 145
+Tokens   ▁▂▃▄▅▆▇█▇▆▅▄▃▂▁ Current: 123.5k
+Cost     ▁▂▃▄▅▆▇█▇▆▅▄▃▂▁ Current: $0.45
+
+Response Time (ms)
+┌────────────────────────────────────────────────┐
+│1200├───────────────────────────────────────────┤│
+│    │      ╱╲    ╱╲                             ││
+│ 800├────╱──╲──╱──╲─────────────────────────────┤│
+│    │  ╱      ╲╱    ╲                           ││
+│ 400├─╱──────────────╲─────────────────────────┤│
+│    │                    ╲                       ││
+│   0└────────────────────────╲───────────────────┘│
+└────────────────────────────────────────────────┘
+
+[m] Menu • [r] Refresh • [q/ESC] Back
+```
+
+#### Analytics Views
+
+1. **Overview** (o): Request volume sparklines, response time chart
+2. **Token Usage** (t): Token breakdown bar chart, efficiency metrics
+3. **Performance** (p): Account performance comparison, success rates
+4. **Cost Analysis** (c): Cost trends, projections, per-request costs
+5. **Model Distribution** (d): Pie chart of model usage, performance by model
+
+#### Keyboard Shortcuts
+
+- **1-4**: Select time range (1h, 6h, 24h, 7d)
+- **o/t/p/c/d**: Quick switch between views
+- **m**: Open view selection menu
+- **r**: Manual refresh
+- **q/ESC**: Return to home
+
+Features:
+- Interactive charts (sparklines, line charts, bar charts, pie charts)
+- Time-range selection for different analysis periods
+- Auto-refreshes every 30 seconds
+- Multiple specialized views for different metrics
+- Real-time data visualization
+
+### 7. Load Balancer Screen
+
+View the active load balancing strategy:
+
+```
+⚖️ Load Balancer Strategy
+
+Current Strategy: session
+
+Available Strategies:
+  → session
+
+Note: Only the session strategy is available.
+Other strategies have been removed to prevent
+account bans from Claude's anti-abuse systems.
+Press ESC or q to go back
+```
+
+#### Features
+
+- View current active strategy
+- List all available strategies
+- Change strategy interactively
+- Confirmation messages for changes
+
+#### Keyboard Shortcuts
+
+- **Enter**: Open strategy selection menu
+- **↑/↓**: Navigate strategies (in selection mode)
+- **q/ESC**: Return to home (or cancel selection)
+
+### 8. Logs Viewer Screen
 
 Stream logs with pause and clear capabilities:
 
@@ -424,6 +533,13 @@ bun run dev --logs 100 | grep ERROR > error.log &
 # Start server without TUI
 bun run dev --serve --port 8081
 
+# Account management
+bun run dev --pause production-account
+bun run dev --resume production-account
+
+# Performance analysis
+bun run dev --analyze
+
 # Maintenance tasks
 bun run dev --reset-stats
 bun run dev --clear-history
@@ -492,6 +608,12 @@ bun run dev --port 8081
 
 ## Recent Changes
 
+- **Analytics Dashboard**: New screen with interactive charts and time-range analysis
+- **Load Balancer Screen**: View and change load balancing strategies
+- **Enhanced Request View**: Shows model names, token counts, and costs in list view
+- **Pagination**: Request history now uses arrow keys for page navigation
+- **Account Management**: New --pause and --resume commands for account control
+- **Performance Analysis**: New --analyze command for database performance insights
 - **PKCE OAuth**: Enhanced security for account authentication
 - **Token Metrics**: Detailed token usage and cost tracking
 - **Async Database**: Improved performance with AsyncDbWriter

@@ -1,6 +1,7 @@
+import { formatPercentage } from "@ccflare/ui-common";
 import { RefreshCw } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
-import { api, type Stats } from "../api";
+import { useResetStats, useStats } from "../hooks/queries";
+import { useApiError } from "../hooks/useApiError";
 import { Button } from "./ui/button";
 import {
 	Card,
@@ -11,36 +12,23 @@ import {
 } from "./ui/card";
 
 export function StatsTab() {
-	const [stats, setStats] = useState<Stats | null>(null);
-	const [loading, setLoading] = useState(true);
-	const [error, setError] = useState<string | null>(null);
-
-	const loadStats = useCallback(async () => {
-		try {
-			const data = await api.getStats();
-			setStats(data);
-			setError(null);
-		} catch (err) {
-			setError(err instanceof Error ? err.message : "Failed to load stats");
-		} finally {
-			setLoading(false);
-		}
-	}, []);
-
-	useEffect(() => {
-		loadStats();
-		const interval = setInterval(loadStats, 10000);
-		return () => clearInterval(interval);
-	}, [loadStats]);
+	const { formatError } = useApiError();
+	const {
+		data: stats,
+		isLoading: loading,
+		error,
+		refetch: loadStats,
+	} = useStats();
+	const resetStatsMutation = useResetStats();
 
 	const handleResetStats = async () => {
 		if (!confirm("Are you sure you want to reset all statistics?")) return;
 
 		try {
-			await api.resetStats();
-			await loadStats();
+			await resetStatsMutation.mutateAsync();
 		} catch (err) {
-			setError(err instanceof Error ? err.message : "Failed to reset stats");
+			// Since we can't set error directly, we'll just alert the user
+			alert(formatError(err));
 		}
 	};
 
@@ -58,9 +46,9 @@ export function StatsTab() {
 		return (
 			<Card>
 				<CardContent className="pt-6">
-					<p className="text-destructive">Error: {error}</p>
+					<p className="text-destructive">Error: {formatError(error)}</p>
 					<Button
-						onClick={loadStats}
+						onClick={() => loadStats()}
 						variant="outline"
 						size="sm"
 						className="mt-2"
@@ -79,7 +67,7 @@ export function StatsTab() {
 				<CardHeader>
 					<div className="flex items-center justify-between">
 						<CardTitle>Account Performance</CardTitle>
-						<Button onClick={loadStats} variant="ghost" size="sm">
+						<Button onClick={() => loadStats()} variant="ghost" size="sm">
 							<RefreshCw className="h-4 w-4" />
 						</Button>
 					</div>
@@ -119,7 +107,7 @@ export function StatsTab() {
 															: "text-red-600"
 												}
 											>
-												{account.successRate}%
+												{formatPercentage(account.successRate)}
 											</span>
 										</div>
 									</div>
@@ -158,7 +146,11 @@ export function StatsTab() {
 					<CardTitle>Actions</CardTitle>
 				</CardHeader>
 				<CardContent>
-					<Button onClick={handleResetStats} variant="destructive">
+					<Button
+						onClick={handleResetStats}
+						variant="destructive"
+						disabled={resetStatsMutation.isPending}
+					>
 						Reset All Statistics
 					</Button>
 				</CardContent>

@@ -23,6 +23,9 @@ export interface StartMessage {
 	// Provider info for rate limit parsing
 	providerName: string;
 
+	// Agent info
+	agentUsed: string | null;
+
 	// Retry info
 	retryAttempt: number;
 	failoverAttempts: number;

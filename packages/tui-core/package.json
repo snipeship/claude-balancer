@@ -12,9 +12,12 @@
 	},
 	"dependencies": {
 		"@ccflare/cli-commands": "workspace:*",
+		"@ccflare/config": "workspace:*",
 		"@ccflare/database": "workspace:*",
 		"@ccflare/logger": "workspace:*",
 		"@ccflare/core": "workspace:*",
+		"@ccflare/oauth-flow": "workspace:*",
+		"@ccflare/providers": "workspace:*",
 		"@ccflare/types": "workspace:*"
 	},
 	"devDependencies": {

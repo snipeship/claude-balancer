@@ -106,7 +106,7 @@ export class Logger {
 	// biome-ignore lint/suspicious/noExplicitAny: Logger needs to accept any error type
 	error(message: string, error?: any): void {
 		if (this.level <= LogLevel.ERROR) {
-			const msg = this.formatMessage("ERROR", message);
+			const msg = this.formatMessage("ERROR", message, error);
 			const event: LogEvent = {
 				ts: Date.now(),
 				level: "ERROR",
@@ -114,7 +114,7 @@ export class Logger {
 			};
 			logBus.emit("log", event);
 			logFileWriter.write(event);
-			if (!this.silentConsole) console.error(msg, error);
+			if (!this.silentConsole) console.error(msg);
 		}
 	}
 

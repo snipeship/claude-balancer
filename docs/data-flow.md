@@ -12,6 +12,7 @@ ccflare is a load balancer proxy for Claude API that distributes requests across
    - [Successful Request Flow](#successful-request-flow)
    - [Rate Limited Request Flow](#rate-limited-request-flow)
    - [Token Refresh Flow](#token-refresh-flow)
+   - [Agent Interceptor Flow](#agent-interceptor-flow)
    - [Failed Request with Retry Flow](#failed-request-with-retry-flow)
    - [Streaming Response Flow](#streaming-response-flow)
 4. [Error Handling Flows](#error-handling-flows)
@@ -27,8 +28,10 @@ ccflare uses a modular architecture with the following key components:
 - **Proxy**: Core request forwarding logic with retry, rate limiting, and usage tracking
 - **Provider System**: Abstraction layer for different AI providers (currently Anthropic)
 - **Load Balancer**: Strategy pattern implementation for account selection
-- **AsyncDbWriter**: Asynchronous database write queue to prevent blocking
-- **Stream Tee**: Captures streaming responses for analytics without blocking the client
+- **Agent Interceptor**: Detects agent usage and modifies requests based on agent preferences
+- **Post-Processor Worker**: Background worker that handles all usage extraction and database writes via message passing
+- **AsyncDbWriter**: Asynchronous database write queue to prevent blocking (100ms processing interval)
+- **Response Handler**: Uses Response.clone() for streaming analytics without blocking the client
 - **Service Container**: Dependency injection for component management
 
 ## Overview of Request Lifecycle
@@ -37,14 +40,15 @@ The request lifecycle in ccflare follows these main stages:
 
 1. **Request Reception**: Client sends request to ccflare server
 2. **Route Determination**: Server checks if it's an API request, dashboard request, or proxy request
-3. **Account Selection**: Load balancer strategy selects available accounts based on configured algorithm
-4. **Token Validation**: System checks if account has valid access token, refreshes if needed
-5. **Request Forwarding**: Proxy forwards request to Anthropic API with authentication
-6. **Response Handling**: System processes response, extracts usage data, checks rate limits
-7. **Stream Capture**: For streaming responses, uses teeStream to capture content without blocking
-8. **Data Persistence**: Queues database updates via AsyncDbWriter for non-blocking writes
-9. **Response Streaming**: Returns response to client, preserving streaming capabilities
-10. **Async Processing**: Background processing of usage data, cost calculation, and analytics
+3. **Request Body Preparation**: Request body is buffered for potential modification and reuse
+4. **Agent Interception**: System detects agent usage in system prompts and modifies model preference if configured
+5. **Account Selection**: Load balancer strategy selects available accounts based on configured algorithm
+6. **Token Validation**: System checks if account has valid access token, refreshes if needed
+7. **Request Forwarding**: Proxy forwards request to Anthropic API with authentication
+8. **Response Handling**: System immediately returns response to client while cloning for analytics
+9. **Background Processing**: Post-processor worker receives messages (START, CHUNK, END) for async processing
+10. **Data Persistence**: Worker queues database updates via AsyncDbWriter for non-blocking writes
+11. **Usage Extraction**: Worker extracts usage data from streaming responses without blocking
 
 ## Sequence Diagrams
 
@@ -66,6 +70,16 @@ sequenceDiagram
     Server->>Router: Check API routes
     Router-->>Server: No match, continue
     Server->>Proxy: handleProxy(req, url, context)
+    
+    Note over Proxy: Validate provider can handle path
+    Proxy->>Proxy: Prepare request body buffer
+    
+    Note over Proxy: Agent Interception
+    Proxy->>AgentInterceptor: interceptAndModifyRequest(body)
+    AgentInterceptor->>AgentInterceptor: Extract system prompt
+    AgentInterceptor->>AgentInterceptor: Detect agent usage
+    AgentInterceptor->>DB: getAgentPreference(agentId)
+    AgentInterceptor-->>Proxy: Modified body with preferred model
     
     Note over Proxy: Generate request ID and metadata
     
@@ -104,33 +118,29 @@ sequenceDiagram
         end
         
         alt Response OK
-            alt Streaming Response
-                Proxy->>Proxy: teeStream(response.body)
-                Note over Proxy: Capture stream without blocking
-                Proxy->>Provider: extractUsageInfo(async)
-                Provider-->>Proxy: Usage promise
-                Proxy->>Client: Stream response immediately
+            alt Response OK
+                Proxy->>ResponseHandler: forwardToClient(options, context)
+                ResponseHandler->>Worker: postMessage(START message)
+                Note over Worker: Contains request/response metadata
                 
-                Note over Proxy: Background processing
-                Proxy->>Proxy: await usage promise
-                Proxy->>AsyncWriter: enqueue(updateRequestUsage)
-                Proxy->>AsyncWriter: enqueue(saveRequestPayload with stream data)
-            else Non-streaming Response
-                Proxy->>Provider: extractUsageInfo(response)
-                Provider-->>Proxy: Usage data (tokens, model)
-                Proxy->>Proxy: estimateCostUSD(model, tokens)
-                
-                alt Has tier info
-                    Proxy->>Provider: extractTierInfo(response)
-                    Provider-->>Proxy: Account tier
-                    Proxy->>AsyncWriter: enqueue(updateAccountTier)
+                alt Streaming Response
+                    ResponseHandler->>ResponseHandler: response.clone()
+                    ResponseHandler-->>Client: Return original response immediately
+                    
+                    Note over ResponseHandler: Background stream processing
+                    ResponseHandler->>ResponseHandler: Read clone stream
+                    loop For each chunk
+                        ResponseHandler->>Worker: postMessage(CHUNK message)
+                    end
+                    ResponseHandler->>Worker: postMessage(END message)
+                else Non-streaming Response
+                    ResponseHandler-->>Client: Return original response immediately
+                    
+                    Note over ResponseHandler: Background body processing
+                    ResponseHandler->>ResponseHandler: response.clone()
+                    ResponseHandler->>ResponseHandler: Read clone body
+                    ResponseHandler->>Worker: postMessage(END message with body)
                 end
-                
-                Proxy->>AsyncWriter: enqueue(saveRequest)
-                Proxy->>AsyncWriter: enqueue(saveRequestPayload)
-                
-                Proxy->>Provider: processResponse(response)
-                Proxy-->>Client: Processed response
             end
         end
     end
@@ -299,54 +309,117 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
     participant Client
-    participant Proxy
-    participant TeeStream
+    participant ResponseHandler
+    participant Worker as Post-Processor Worker
     participant AsyncWriter as Async DB Writer
-    participant Provider
     participant DB
 
-    Note over Proxy: Streaming response detected
+    Note over ResponseHandler: Streaming response detected
     
-    Proxy->>Provider: isStreamingResponse(response)?
-    Provider-->>Proxy: true
+    ResponseHandler->>ResponseHandler: isStreamingResponse(response)?
+    Note over ResponseHandler: true
     
-    Proxy->>TeeStream: Create teeStream(response.body)
-    Note over TeeStream: maxBytes: runtime.streamBodyMaxBytes
+    ResponseHandler->>Worker: postMessage(START)
+    Note over Worker: Initialize request state
+    Worker->>AsyncWriter: enqueue(saveRequestMeta)
+    Worker->>AsyncWriter: enqueue(updateAccountUsage)
     
-    TeeStream->>TeeStream: Create new ReadableStream
+    ResponseHandler->>ResponseHandler: response.clone()
+    Note over ResponseHandler: Clone for analytics
     
     par Stream to Client
-        TeeStream->>Client: Pass through chunks immediately
-        Note over Client: Receives stream without delay
-    and Buffer for Analytics
+        ResponseHandler-->>Client: Return original response
+        Note over Client: Receives stream immediately
+    and Analytics Processing
+        ResponseHandler->>ResponseHandler: getReader() on clone
         loop While streaming
-            TeeStream->>TeeStream: Buffer chunks (up to maxBytes)
-            alt Buffer full
-                TeeStream->>TeeStream: Set truncated flag
-                Note over TeeStream: Stop buffering
-            end
+            ResponseHandler->>ResponseHandler: reader.read()
+            ResponseHandler->>Worker: postMessage(CHUNK)
+            Worker->>Worker: Process chunk for usage
+            Worker->>Worker: Extract tokens from SSE
+            Worker->>Worker: Buffer chunks
+        end
+        ResponseHandler->>Worker: postMessage(END)
+    end
+    
+    Note over Worker: Process final usage data
+    Worker->>Worker: Calculate total tokens
+    Worker->>Worker: Estimate cost
+    Worker->>Worker: Calculate tokens/second
+    Worker->>AsyncWriter: enqueue(saveRequest)
+    Worker->>AsyncWriter: enqueue(saveRequestPayload)
+    
+    Note over AsyncWriter,DB: Process queue every 100ms
+    AsyncWriter->>DB: Execute batched operations
+```
+
+### Post-Processor Worker Message Flow
+
+```mermaid
+sequenceDiagram
+    participant ResponseHandler
+    participant Worker as Post-Processor Worker
+    participant TokenEncoder as Tiktoken Encoder
+    participant AsyncWriter
+    participant DB
+
+    Note over ResponseHandler,Worker: START Phase
+    ResponseHandler->>Worker: START message
+    Note over Worker: Contains: requestId, accountId, method, path,<br/>headers, body, status, isStream, agent info
+    
+    Worker->>Worker: Create request state
+    Worker->>Worker: Check shouldLogRequest(path, status)
+    
+    alt Should log request
+        Worker->>AsyncWriter: enqueue(saveRequestMeta)
+        alt Has accountId
+            Worker->>AsyncWriter: enqueue(updateAccountUsage)
+        end
+    else Skip logging (e.g., .well-known 404)
+        Note over Worker: Mark as shouldSkipLogging
+    end
+
+    Note over ResponseHandler,Worker: CHUNK Phase (Streaming only)
+    loop For each stream chunk
+        ResponseHandler->>Worker: CHUNK message with data
+        Worker->>Worker: Store chunk in buffer
+        Worker->>Worker: Decode chunk to text
+        Worker->>Worker: Parse SSE lines
+        
+        alt message_start event
+            Worker->>Worker: Extract initial usage data
+            Worker->>Worker: Extract model info
+        else content_block_start
+            Worker->>Worker: Record firstTokenTimestamp
+        else content_block_delta
+            Worker->>TokenEncoder: encode(delta text)
+            TokenEncoder-->>Worker: Token count
+            Worker->>Worker: Update outputTokensComputed
+        else message_delta with usage
+            Worker->>Worker: Update providerFinalOutputTokens
+            Worker->>Worker: Record lastTokenTimestamp
         end
     end
+
+    Note over ResponseHandler,Worker: END Phase
+    ResponseHandler->>Worker: END message
     
-    Note over Proxy: Fire-and-forget usage extraction
-    Proxy->>Provider: extractUsageInfo(responseClone)
-    
-    alt Stream completed
-        TeeStream->>TeeStream: onClose callback
-        TeeStream->>TeeStream: combineChunks(buffered)
-        TeeStream->>AsyncWriter: enqueue(saveRequestPayload)
-        Note over AsyncWriter: Payload includes:<br/>- Captured stream data<br/>- bodyTruncated flag<br/>- Stream metadata
-    else Stream error
-        TeeStream->>TeeStream: onError callback
-        Note over Proxy: Log error, continue streaming
+    alt Not skipping logs
+        Worker->>Worker: Calculate final token counts
+        Note over Worker: Use provider count if available,<br/>else use computed count
+        
+        Worker->>Worker: estimateCostUSD(model, tokens)
+        Worker->>Worker: Calculate tokens/second
+        
+        Worker->>AsyncWriter: enqueue(saveRequest)
+        Note over AsyncWriter: Includes usage metrics
+        
+        Worker->>Worker: combineChunks() if streaming
+        Worker->>AsyncWriter: enqueue(saveRequestPayload)
+        Note over AsyncWriter: Includes full request/response
     end
     
-    Note over Provider: Background usage extraction
-    Provider->>Provider: Parse streaming response
-    Provider-->>AsyncWriter: enqueue(updateRequestUsage)
-    
-    Note over AsyncWriter,DB: Async processing
-    AsyncWriter->>DB: Process all queued updates
+    Worker->>Worker: Clean up request state
 ```
 
 ## Error Handling Flows
@@ -390,7 +463,8 @@ sequenceDiagram
         Anthropic-->>Proxy: Response
         
         alt Streaming Response
-            Proxy->>Proxy: teeStream for capture
+            Proxy->>ResponseHandler: forwardToClient()
+            ResponseHandler->>ResponseHandler: response.clone()
             Proxy-->>Client: Stream response
             Proxy->>AsyncWriter: enqueue(saveRequest)<br/>accountId: NO_ACCOUNT_ID
             Proxy->>AsyncWriter: enqueue(saveRequestPayload)
@@ -447,7 +521,9 @@ flowchart TD
 - **Backoff multiplier**: `runtime.retry.backoff` (default: 2, configurable)
 - **Max attempts**: `runtime.retry.attempts` (default: 3, configurable)
 - **Delay calculation**: `delayMs * (backoff ^ attemptNumber)`
-- **Stream body max bytes**: Default: 1MB (1024 * 1024 bytes) in teeStream
+- **Stream body max bytes**: Controlled by CF_STREAM_USAGE_BUFFER_KB env var (default: defined in BUFFER_SIZES constant)
+- **Worker processing interval**: AsyncDbWriter processes queue every 100ms
+- **Worker shutdown delay**: TIMING.WORKER_SHUTDOWN_DELAY for graceful shutdown
 
 Configuration can be set via:
 1. Environment variables: `RETRY_ATTEMPTS`, `RETRY_DELAY_MS`, `RETRY_BACKOFF`
@@ -481,8 +557,10 @@ flowchart LR
         K --> L[enqueue: updateAccountTier]
         
         subgraph "Async Processing"
-            M[AsyncDbWriter Queue] --> N[Process Jobs]
-            N --> O[Execute DB Operations]
+            M[Worker Message Queue] --> N[Post-Processor Worker]
+            N --> O[AsyncDbWriter Queue]
+            O --> P[Process Jobs (100ms interval)]
+            P --> Q[Execute DB Operations]
         end
     end
 ```
@@ -667,10 +745,39 @@ The ccflare data flow is designed to:
 4. **Handle failures gracefully** with fallback modes and clear error reporting
 5. **Respect rate limits** intelligently, distinguishing between hard limits and warnings
 6. **Optimize performance** through:
-   - Non-blocking async database writes
-   - Streaming response passthrough with tee capture
-   - Efficient request/response payload storage
+   - Non-blocking async database writes via worker message passing
+   - Streaming response passthrough with Response.clone() for analytics
+   - Background post-processor worker for all usage extraction
+   - Efficient request/response payload storage with base64 encoding
 7. **Support analytics** by capturing streaming responses without impacting performance
 8. **Enable debugging** through comprehensive request/response payload storage
 
-The system ensures reliable Claude API access while providing comprehensive monitoring and management capabilities through its dashboard and API endpoints. Recent enhancements include streaming response capture for analytics, asynchronous database operations for better performance, and enhanced cost tracking with detailed token breakdowns.
+The system ensures reliable Claude API access while providing comprehensive monitoring and management capabilities through its dashboard and API endpoints.
+
+## Key Implementation Details
+
+### Agent Interceptor Flow
+
+The agent interceptor examines system prompts to:
+1. Detect agent usage by matching system prompts
+2. Extract workspace paths from CLAUDE.md references
+3. Look up agent model preferences in the database
+4. Modify the request body to use the preferred model
+5. Track which agent was used for analytics
+
+### Post-Processor Worker Architecture
+
+The post-processor worker handles all analytics asynchronously:
+1. Receives START message with request/response metadata
+2. Processes CHUNK messages for streaming responses, extracting usage from SSE data
+3. Receives END message to finalize processing
+4. Calculates costs, tokens per second, and other metrics
+5. Queues all database operations through AsyncDbWriter
+6. Handles graceful shutdown via shutdown message
+
+### Response Handling Strategy
+
+1. **Immediate Response**: Original response is returned to client without modification
+2. **Background Analytics**: Response.clone() used for analytics processing
+3. **Worker Communication**: All processing delegated to post-processor worker
+4. **No Blocking**: Client never waits for analytics or database operations

@@ -1,5 +1,13 @@
-import { NO_ACCOUNT_ID } from "@ccflare/core";
+import {
+	errorResponse,
+	InternalServerError,
+	jsonResponse,
+} from "@ccflare/http-common";
+import { Logger } from "@ccflare/logger";
+import { NO_ACCOUNT_ID } from "@ccflare/types";
 import type { AnalyticsResponse, APIContext } from "../types";
+
+const log = new Logger("AnalyticsHandler");
 
 interface BucketConfig {
 	bucketMs: number;
@@ -12,6 +20,7 @@ interface TotalsResult {
 	avg_response_time: number;
 	total_tokens: number;
 	total_cost_usd: number;
+	avg_tokens_per_second: number;
 }
 
 interface ActiveAccountsResult {
@@ -122,7 +131,8 @@ export function createAnalyticsHandler(context: APIContext) {
 					SUM(CASE WHEN success = 1 THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(*), 0) as success_rate,
 					AVG(response_time_ms) as avg_response_time,
 					SUM(COALESCE(total_tokens, 0)) as total_tokens,
-					SUM(COALESCE(cost_usd, 0)) as total_cost_usd
+					SUM(COALESCE(cost_usd, 0)) as total_cost_usd,
+					AVG(output_tokens_per_second) as avg_tokens_per_second
 				FROM requests r
 				WHERE ${whereClause}
 			`);
@@ -139,10 +149,14 @@ export function createAnalyticsHandler(context: APIContext) {
 				...queryParams,
 			) as ActiveAccountsResult;
 
+			// Check if we need per-model time series
+			const includeModelBreakdown = params.get("modelBreakdown") === "true";
+
 			// Get time series data
 			const timeSeriesQuery = db.prepare(`
 				SELECT
 					(timestamp / ?) * ? as ts,
+					${includeModelBreakdown ? "model," : ""}
 					COUNT(*) as requests,
 					SUM(COALESCE(total_tokens, 0)) as tokens,
 					SUM(COALESCE(cost_usd, 0)) as cost_usd,
@@ -150,11 +164,12 @@ export function createAnalyticsHandler(context: APIContext) {
 					SUM(CASE WHEN success = 0 THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(*), 0) as error_rate,
 					SUM(COALESCE(cache_read_input_tokens, 0)) * 100.0 / 
 						NULLIF(SUM(COALESCE(input_tokens, 0) + COALESCE(cache_read_input_tokens, 0) + COALESCE(cache_creation_input_tokens, 0)), 0) as cache_hit_rate,
-					AVG(response_time_ms) as avg_response_time
+					AVG(response_time_ms) as avg_response_time,
+					AVG(output_tokens_per_second) as avg_tokens_per_second
 				FROM requests r
-				WHERE ${whereClause}
-				GROUP BY ts
-				ORDER BY ts
+				WHERE ${whereClause} ${includeModelBreakdown ? "AND model IS NOT NULL" : ""}
+				GROUP BY ts${includeModelBreakdown ? ", model" : ""}
+				ORDER BY ts${includeModelBreakdown ? ", model" : ""}
 			`);
 			const timeSeries = timeSeriesQuery.all(
 				bucket.bucketMs,
@@ -162,6 +177,7 @@ export function createAnalyticsHandler(context: APIContext) {
 				...queryParams,
 			) as Array<{
 				ts: number;
+				model?: string;
 				requests: number;
 				tokens: number;
 				cost_usd: number;
@@ -169,6 +185,7 @@ export function createAnalyticsHandler(context: APIContext) {
 				error_rate: number;
 				cache_hit_rate: number;
 				avg_response_time: number;
+				avg_tokens_per_second: number | null;
 			}>;
 
 			// Get token breakdown
@@ -231,7 +248,10 @@ export function createAnalyticsHandler(context: APIContext) {
 					MAX(response_time_ms) as max_response_time,
 					COUNT(*) as total_requests,
 					SUM(CASE WHEN success = 0 THEN 1 ELSE 0 END) as error_count,
-					SUM(CASE WHEN success = 0 THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(*), 0) as error_rate
+					SUM(CASE WHEN success = 0 THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(*), 0) as error_rate,
+					AVG(output_tokens_per_second) as avg_tokens_per_second,
+					MIN(CASE WHEN output_tokens_per_second > 0 THEN output_tokens_per_second ELSE NULL END) as min_tokens_per_second,
+					MAX(output_tokens_per_second) as max_tokens_per_second
 				FROM requests r
 				WHERE ${whereClause} AND model IS NOT NULL
 				GROUP BY model
@@ -245,34 +265,43 @@ export function createAnalyticsHandler(context: APIContext) {
 				total_requests: number;
 				error_count: number;
 				error_rate: number;
+				avg_tokens_per_second: number | null;
+				min_tokens_per_second: number | null;
+				max_tokens_per_second: number | null;
 			}>;
 
-			// Calculate p95 for each model
+			// Calculate p95 for each model using SQL window functions
 			const modelPerformance = modelPerfData.map((modelData) => {
-				// For p95, we'll fetch response times and calculate
-				const responseTimes = db
+				// Use SQLite's NTILE or manual percentile calculation
+				// SQLite doesn't have built-in percentile functions, but we can use a more efficient query
+				const p95Result = db
 					.prepare(`
-					SELECT response_time_ms
-					FROM requests r
-					WHERE ${whereClause} AND model = ? AND response_time_ms IS NOT NULL
-					ORDER BY response_time_ms
+					WITH ordered_times AS (
+						SELECT 
+							response_time_ms,
+							ROW_NUMBER() OVER (ORDER BY response_time_ms) as row_num,
+							COUNT(*) OVER () as total_count
+						FROM requests r
+						WHERE ${whereClause} AND model = ? AND response_time_ms IS NOT NULL
+					)
+					SELECT response_time_ms as p95_response_time
+					FROM ordered_times
+					WHERE row_num = CAST(CEIL(total_count * 0.95) AS INTEGER)
+					LIMIT 1
 				`)
-					.all(...queryParams, modelData.model) as Array<{
-					response_time_ms: number;
-				}>;
-
-				const p95Index = Math.ceil(responseTimes.length * 0.95) - 1;
-				const p95ResponseTime =
-					responseTimes.length > 0
-						? responseTimes[Math.min(p95Index, responseTimes.length - 1)]
-								.response_time_ms
-						: modelData.avg_response_time;
+					.get(...queryParams, modelData.model) as
+					| { p95_response_time: number }
+					| undefined;
 
 				return {
 					model: modelData.model,
 					avgResponseTime: modelData.avg_response_time || 0,
-					p95ResponseTime: p95ResponseTime || 0,
+					p95ResponseTime:
+						p95Result?.p95_response_time || modelData.avg_response_time || 0,
 					errorRate: modelData.error_rate || 0,
+					avgTokensPerSecond: modelData.avg_tokens_per_second || null,
+					minTokensPerSecond: modelData.min_tokens_per_second || null,
+					maxTokensPerSecond: modelData.max_tokens_per_second || null,
 				};
 			});
 
@@ -281,7 +310,8 @@ export function createAnalyticsHandler(context: APIContext) {
 				SELECT
 					model,
 					SUM(COALESCE(cost_usd, 0)) as cost_usd,
-					COUNT(*) as requests
+					COUNT(*) as requests,
+					SUM(COALESCE(total_tokens, 0)) as total_tokens
 				FROM requests r
 				WHERE ${whereClause} AND COALESCE(cost_usd, 0) > 0 AND model IS NOT NULL
 				GROUP BY model
@@ -292,11 +322,13 @@ export function createAnalyticsHandler(context: APIContext) {
 				model: string;
 				cost_usd: number;
 				requests: number;
+				total_tokens: number;
 			}>;
 
 			// Transform timeSeries data
 			let transformedTimeSeries = timeSeries.map((point) => ({
 				ts: point.ts,
+				...(point.model && { model: point.model }),
 				requests: point.requests || 0,
 				tokens: point.tokens || 0,
 				costUsd: point.cost_usd || 0,
@@ -304,10 +336,11 @@ export function createAnalyticsHandler(context: APIContext) {
 				errorRate: point.error_rate || 0,
 				cacheHitRate: point.cache_hit_rate || 0,
 				avgResponseTime: point.avg_response_time || 0,
+				avgTokensPerSecond: point.avg_tokens_per_second || null,
 			}));
 
 			// Apply cumulative transformation if requested
-			if (isCumulative) {
+			if (isCumulative && !includeModelBreakdown) {
 				let runningRequests = 0;
 				let runningTokens = 0;
 				let runningCostUsd = 0;
@@ -325,6 +358,35 @@ export function createAnalyticsHandler(context: APIContext) {
 						// Keep rates as-is (not cumulative)
 					};
 				});
+			} else if (isCumulative && includeModelBreakdown) {
+				// For per-model cumulative, track running totals per model
+				const runningTotals: Record<
+					string,
+					{ requests: number; tokens: number; costUsd: number }
+				> = {};
+
+				transformedTimeSeries = transformedTimeSeries.map((point) => {
+					if (point.model) {
+						if (!runningTotals[point.model]) {
+							runningTotals[point.model] = {
+								requests: 0,
+								tokens: 0,
+								costUsd: 0,
+							};
+						}
+						runningTotals[point.model].requests += point.requests;
+						runningTotals[point.model].tokens += point.tokens;
+						runningTotals[point.model].costUsd += point.costUsd;
+
+						return {
+							...point,
+							requests: runningTotals[point.model].requests,
+							tokens: runningTotals[point.model].tokens,
+							costUsd: runningTotals[point.model].costUsd,
+						};
+					}
+					return point;
+				});
 			}
 
 			const response: AnalyticsResponse = {
@@ -340,6 +402,7 @@ export function createAnalyticsHandler(context: APIContext) {
 					avgResponseTime: totals.avg_response_time || 0,
 					totalTokens: totals.total_tokens || 0,
 					totalCostUsd: totals.total_cost_usd || 0,
+					avgTokensPerSecond: totals.avg_tokens_per_second || null,
 				},
 				timeSeries: transformedTimeSeries,
 				tokenBreakdown: {
@@ -359,21 +422,16 @@ export function createAnalyticsHandler(context: APIContext) {
 					model: model.model,
 					costUsd: model.cost_usd || 0,
 					requests: model.requests || 0,
+					totalTokens: model.total_tokens || 0,
 				})),
 				modelPerformance,
 			};
 
-			return new Response(JSON.stringify(response), {
-				headers: { "Content-Type": "application/json" },
-			});
+			return jsonResponse(response);
 		} catch (error) {
-			console.error("Analytics error:", error);
-			return new Response(
-				JSON.stringify({ error: "Failed to fetch analytics data" }),
-				{
-					status: 500,
-					headers: { "Content-Type": "application/json" },
-				},
+			log.error("Analytics error:", error);
+			return errorResponse(
+				InternalServerError("Failed to fetch analytics data"),
 			);
 		}
 	};

@@ -4,28 +4,20 @@ import { dirname } from "node:path";
 import {
 	DEFAULT_STRATEGY,
 	isValidStrategy,
+	NETWORK,
 	type StrategyName,
+	TIME_CONSTANTS,
 } from "@ccflare/core";
+import { Logger } from "@ccflare/logger";
 import { resolveConfigPath } from "./paths";
+
+const log = new Logger("Config");
 
 export interface RuntimeConfig {
 	clientId: string;
 	retry: { attempts: number; delayMs: number; backoff: number };
 	sessionDurationMs: number;
 	port: number;
-	database?: {
-		walMode?: boolean;
-		busyTimeoutMs?: number;
-		cacheSize?: number;
-		synchronous?: 'OFF' | 'NORMAL' | 'FULL';
-		mmapSize?: number;
-		retry?: {
-			attempts?: number;
-			delayMs?: number;
-			backoff?: number;
-			maxDelayMs?: number;
-		};
-	};
 }
 
 export interface ConfigData {
@@ -36,16 +28,6 @@ export interface ConfigData {
 	retry_backoff?: number;
 	session_duration_ms?: number;
 	port?: number;
-	// Database configuration
-	db_wal_mode?: boolean;
-	db_busy_timeout_ms?: number;
-	db_cache_size?: number;
-	db_synchronous?: 'OFF' | 'NORMAL' | 'FULL';
-	db_mmap_size?: number;
-	db_retry_attempts?: number;
-	db_retry_delay_ms?: number;
-	db_retry_backoff?: number;
-	db_retry_max_delay_ms?: number;
 	[key: string]: string | number | boolean | undefined;
 }
 
@@ -65,7 +47,7 @@ export class Config extends EventEmitter {
 				const content = readFileSync(this.configPath, "utf8");
 				this.data = JSON.parse(content) as ConfigData;
 			} catch (error) {
-				console.error(`Failed to parse config file: ${error}`);
+				log.error(`Failed to parse config file: ${error}`);
 				this.data = {};
 			}
 		} else {
@@ -86,7 +68,7 @@ export class Config extends EventEmitter {
 			const content = JSON.stringify(this.data, null, 2);
 			writeFileSync(this.configPath, content, "utf8");
 		} catch (error) {
-			console.error(`Failed to save config file: ${error}`);
+			log.error(`Failed to save config file: ${error}`);
 		}
 	}
 
@@ -152,24 +134,11 @@ export class Config extends EventEmitter {
 			clientId: "9d1c250a-e61b-44d9-88ed-5944d1962f5e",
 			retry: {
 				attempts: 3,
-				delayMs: 1000,
+				delayMs: TIME_CONSTANTS.RETRY_DELAY_DEFAULT,
 				backoff: 2,
 			},
-			sessionDurationMs: 5 * 60 * 60 * 1000, // 5 hours
-			port: 8080,
-			database: {
-				walMode: true,
-				busyTimeoutMs: 5000,
-				cacheSize: -20000, // 20MB cache
-				synchronous: 'NORMAL',
-				mmapSize: 268435456, // 256MB
-				retry: {
-					attempts: 3,
-					delayMs: 100,
-					backoff: 2,
-					maxDelayMs: 5000,
-				},
-			},
+			sessionDurationMs: TIME_CONSTANTS.SESSION_DURATION_DEFAULT,
+			port: NETWORK.DEFAULT_PORT,
 		};
 
 		// Override with environment variables if present
@@ -210,35 +179,6 @@ export class Config extends EventEmitter {
 		}
 		if (typeof this.data.port === "number") {
 			defaults.port = this.data.port;
-		}
-
-		// Database configuration overrides
-		if (typeof this.data.db_wal_mode === "boolean") {
-			defaults.database!.walMode = this.data.db_wal_mode;
-		}
-		if (typeof this.data.db_busy_timeout_ms === "number") {
-			defaults.database!.busyTimeoutMs = this.data.db_busy_timeout_ms;
-		}
-		if (typeof this.data.db_cache_size === "number") {
-			defaults.database!.cacheSize = this.data.db_cache_size;
-		}
-		if (typeof this.data.db_synchronous === "string") {
-			defaults.database!.synchronous = this.data.db_synchronous as 'OFF' | 'NORMAL' | 'FULL';
-		}
-		if (typeof this.data.db_mmap_size === "number") {
-			defaults.database!.mmapSize = this.data.db_mmap_size;
-		}
-		if (typeof this.data.db_retry_attempts === "number") {
-			defaults.database!.retry!.attempts = this.data.db_retry_attempts;
-		}
-		if (typeof this.data.db_retry_delay_ms === "number") {
-			defaults.database!.retry!.delayMs = this.data.db_retry_delay_ms;
-		}
-		if (typeof this.data.db_retry_backoff === "number") {
-			defaults.database!.retry!.backoff = this.data.db_retry_backoff;
-		}
-		if (typeof this.data.db_retry_max_delay_ms === "number") {
-			defaults.database!.retry!.maxDelayMs = this.data.db_retry_max_delay_ms;
 		}
 
 		return defaults;

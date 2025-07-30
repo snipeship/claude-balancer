@@ -1,5 +1,8 @@
-import { logBus } from "@ccflare/logger";
+import { sseResponse } from "@ccflare/http-common";
+import { Logger, logBus } from "@ccflare/logger";
 import type { LogEvent } from "@ccflare/types";
+
+const log = new Logger("LogsHandler");
 
 /**
  * Create a logs stream handler using Server-Sent Events
@@ -18,7 +21,7 @@ export function createLogsStreamHandler() {
 				const initialData = `data: ${JSON.stringify({ connected: true })}\n\n`;
 				await writer.write(encoder.encode(initialData));
 			} catch (e) {
-				console.error("Error sending initial message:", e);
+				log.error("Error sending initial message:", e);
 			}
 		})();
 
@@ -52,12 +55,6 @@ export function createLogsStreamHandler() {
 			}
 		}, 0);
 
-		return new Response(readable, {
-			headers: {
-				"Content-Type": "text/event-stream",
-				"Cache-Control": "no-cache",
-				Connection: "keep-alive",
-			},
-		});
+		return sseResponse(readable);
 	};
 }

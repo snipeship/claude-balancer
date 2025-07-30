@@ -11,6 +11,9 @@ export interface ParsedArgs {
 	tier?: 1 | 5 | 20;
 	list?: boolean;
 	remove?: string;
+	pause?: string;
+	resume?: string;
+	analyze?: boolean;
 	resetStats?: boolean;
 	clearHistory?: boolean;
 }
@@ -30,6 +33,9 @@ export function parseArgs(args: string[]): ParsedArgs {
 				tier: { type: "string" },
 				list: { type: "boolean" },
 				remove: { type: "string" },
+				pause: { type: "string" },
+				resume: { type: "string" },
+				analyze: { type: "boolean" },
 				"reset-stats": { type: "boolean" },
 				"clear-history": { type: "boolean" },
 			},
@@ -50,6 +56,9 @@ export function parseArgs(args: string[]): ParsedArgs {
 		if (values.tier) result.tier = parseInt(values.tier, 10) as 1 | 5 | 20;
 		if (values.list) result.list = true;
 		if (values.remove) result.remove = values.remove;
+		if (values.pause) result.pause = values.pause;
+		if (values.resume) result.resume = values.resume;
+		if (values.analyze) result.analyze = true;
 		if (values["reset-stats"]) result.resetStats = true;
 		if (values["clear-history"]) result.clearHistory = true;
 

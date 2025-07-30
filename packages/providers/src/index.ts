@@ -3,7 +3,7 @@
 // Export base provider class
 export { BaseProvider } from "./base";
 // Export OAuth utilities
-export { generatePKCE } from "./oauth/pkce";
+export * from "./oauth";
 // Export providers
 export * from "./providers/index";
 // Export registry functions

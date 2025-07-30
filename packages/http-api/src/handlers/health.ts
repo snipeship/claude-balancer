@@ -1,5 +1,6 @@
 import type { Database } from "bun:sqlite";
 import type { Config } from "@ccflare/config";
+import { jsonResponse } from "@ccflare/http-common";
 import type { HealthResponse } from "../types";
 
 /**
@@ -18,8 +19,6 @@ export function createHealthHandler(db: Database, config: Config) {
 			strategy: config.getStrategy(),
 		};
 
-		return new Response(JSON.stringify(response), {
-			headers: { "Content-Type": "application/json" },
-		});
+		return jsonResponse(response);
 	};
 }

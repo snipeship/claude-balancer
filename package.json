@@ -1,10 +1,6 @@
 {
+	"private": true,
 	"name": "ccflare",
-	"version": "0.0.2",
-	"description": "Ultimate CC Proxy",
-	"author": "",
-	"license": "MIT",
-	"main": "index.js",
 	"workspaces": [
 		"apps/*",
 		"packages/*"
@@ -13,11 +9,10 @@
 		"ccflare": "bun run build && bun run tui",
 		"tui": "bun run apps/tui/src/main.ts",
 		"dev": "bun run tui",
+		"start": "bun run apps/server/src/server.ts",
 		"server": "bun run apps/server/src/server.ts",
-		"cli": "bun run apps/cli/src/cli.ts",
 		"dev:server": "bun run --hot apps/server/src/server.ts",
 		"dev:dashboard": "bun --hot packages/dashboard-web/src/index.tsx",
-		"dev:cli": "bun run apps/cli/src/cli.ts",
 		"typecheck": "bunx tsc --noEmit",
 		"build": "bun run build:dashboard && bun run build:tui",
 		"build:dashboard": "bun run --cwd packages/dashboard-web build",

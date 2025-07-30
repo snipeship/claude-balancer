@@ -1,8 +1,11 @@
 declare var self: Worker;
 
-import { estimateCostUSD, NO_ACCOUNT_ID } from "@ccflare/core";
+import { BUFFER_SIZES, estimateCostUSD, TIME_CONSTANTS } from "@ccflare/core";
 import { AsyncDbWriter, DatabaseOperations } from "@ccflare/database";
 import { Logger } from "@ccflare/logger";
+import { NO_ACCOUNT_ID } from "@ccflare/types";
+import { formatCost } from "@ccflare/ui-common";
+import { get_encoding } from "@dqbd/tiktoken";
 import { combineChunks } from "./stream-tee";
 import type {
 	ChunkMessage,
@@ -21,14 +24,24 @@ interface RequestState {
 		cacheReadInputTokens?: number;
 		cacheCreationInputTokens?: number;
 		outputTokens?: number;
+		outputTokensComputed?: number;
 		totalTokens?: number;
 		costUsd?: number;
+		tokensPerSecond?: number;
 	};
 	lastActivity: number;
+	agentUsed?: string;
+	firstTokenTimestamp?: number;
+	lastTokenTimestamp?: number;
+	providerFinalOutputTokens?: number;
+	shouldSkipLogging?: boolean;
 }
 
 const log = new Logger("PostProcessor");
 const requests = new Map<string, RequestState>();
+
+// Initialize tiktoken encoder (cl100k_base is used for Claude models)
+const tokenEncoder = get_encoding("cl100k_base");
 
 // Initialize database connection for worker
 const dbOps = new DatabaseOperations();
@@ -36,8 +49,54 @@ const asyncWriter = new AsyncDbWriter();
 
 // Environment variables
 const MAX_BUFFER_SIZE =
-	Number(process.env.CF_STREAM_USAGE_BUFFER_KB || 64) * 1024;
-const TIMEOUT_MS = Number(process.env.CF_STREAM_TIMEOUT_MS || 1000 * 60 * 1); // 1 minute default
+	Number(
+		process.env.CF_STREAM_USAGE_BUFFER_KB ||
+			BUFFER_SIZES.STREAM_USAGE_BUFFER_KB,
+	) * 1024;
+const TIMEOUT_MS = Number(
+	process.env.CF_STREAM_TIMEOUT_MS || TIME_CONSTANTS.STREAM_TIMEOUT_DEFAULT,
+);
+
+// Check if a request should be logged
+function shouldLogRequest(path: string, status: number): boolean {
+	// Skip logging .well-known 404s
+	if (path.startsWith("/.well-known/") && status === 404) {
+		return false;
+	}
+	return true;
+}
+
+// Extract system prompt from request body
+function _extractSystemPrompt(requestBody: string | null): string | null {
+	if (!requestBody) return null;
+
+	try {
+		// Decode base64 request body
+		const decodedBody = Buffer.from(requestBody, "base64").toString("utf-8");
+		const parsed = JSON.parse(decodedBody);
+
+		// Check if there's a system property in the request
+		if (parsed.system) {
+			// Handle both string and array formats
+			if (typeof parsed.system === "string") {
+				return parsed.system;
+			} else if (Array.isArray(parsed.system)) {
+				// Concatenate all text from system messages
+				return parsed.system
+					.filter(
+						(item: { type?: string; text?: string }) =>
+							item.type === "text" && item.text,
+					)
+					.map((item: { type?: string; text?: string }) => item.text)
+					.join("\n");
+			}
+		}
+	} catch (error) {
+		log.debug("Failed to extract system prompt:", error);
+	}
+
+	return null;
+}
 
 // Parse SSE lines to extract usage (reuse existing logic)
 function parseSSELine(line: string): { event?: string; data?: string } {
@@ -67,10 +126,50 @@ function extractUsageFromData(data: string, state: RequestState): void {
 			}
 		}
 
-		// Handle message_delta
-		if (parsed.type === "message_delta" && parsed.usage) {
-			state.usage.outputTokens =
-				parsed.usage.output_tokens || state.usage.outputTokens || 0;
+		// Track streaming start time on first content block
+		if (parsed.type === "content_block_start" && !state.firstTokenTimestamp) {
+			state.firstTokenTimestamp = Date.now();
+		}
+
+		// Handle message_delta - provider's authoritative output token count AND end time
+		if (parsed.type === "message_delta") {
+			state.lastTokenTimestamp = Date.now();
+
+			if (parsed.usage?.output_tokens !== undefined) {
+				state.providerFinalOutputTokens = parsed.usage.output_tokens;
+				state.usage.outputTokens = parsed.usage.output_tokens;
+				return; // No further processing needed
+			}
+		}
+
+		// Count tokens locally as fallback (but provider's count takes precedence)
+		if (
+			parsed.type === "content_block_delta" &&
+			parsed.delta &&
+			state.providerFinalOutputTokens === undefined // Avoid double counting
+		) {
+			let textToCount: string | undefined;
+
+			// Extract text from different delta types
+			if (parsed.delta.type === "text_delta" && parsed.delta.text) {
+				textToCount = parsed.delta.text;
+			} else if (
+				parsed.delta.type === "thinking_delta" &&
+				parsed.delta.thinking
+			) {
+				textToCount = parsed.delta.thinking;
+			}
+
+			if (textToCount) {
+				// Count tokens using tiktoken
+				try {
+					const tokens = tokenEncoder.encode(textToCount);
+					state.usage.outputTokensComputed =
+						(state.usage.outputTokensComputed || 0) + tokens.length;
+				} catch (err) {
+					log.debug("Failed to count tokens:", err);
+				}
+			}
 		}
 
 		// Handle any usage field in the data
@@ -123,6 +222,9 @@ function processStreamChunk(chunk: Uint8Array, state: RequestState): void {
 }
 
 async function handleStart(msg: StartMessage): Promise<void> {
+	// Check if we should skip logging this request
+	const shouldSkip = !shouldLogRequest(msg.path, msg.responseStatus);
+
 	// Create request state
 	const state: RequestState = {
 		startMessage: msg,
@@ -130,8 +232,22 @@ async function handleStart(msg: StartMessage): Promise<void> {
 		chunks: [],
 		usage: {},
 		lastActivity: Date.now(),
+		shouldSkipLogging: shouldSkip,
 	};
+
+	// Use agent from message if provided
+	if (msg.agentUsed) {
+		state.agentUsed = msg.agentUsed;
+		log.debug(`Agent '${msg.agentUsed}' used for request ${msg.requestId}`);
+	}
+
 	requests.set(msg.requestId, state);
+
+	// Skip all database operations for ignored requests
+	if (shouldSkip) {
+		log.debug(`Skipping logging for ${msg.path} (${msg.responseStatus})`);
+		return;
+	}
 
 	// Save minimal request info immediately
 	asyncWriter.enqueue(() =>
@@ -176,20 +292,54 @@ async function handleEnd(msg: EndMessage): Promise<void> {
 	const { startMessage } = state;
 	const responseTime = Date.now() - startMessage.timestamp;
 
+	// Skip all database operations for ignored requests
+	if (state.shouldSkipLogging) {
+		// Clean up state without logging
+		requests.delete(msg.requestId);
+		return;
+	}
+
 	// Calculate total tokens and cost
 	if (state.usage.model) {
+		// Use provider's authoritative count if available, fallback to computed
+		const finalOutputTokens =
+			state.providerFinalOutputTokens ??
+			state.usage.outputTokens ??
+			state.usage.outputTokensComputed ??
+			0;
+
+		// Update usage with final values
+		state.usage.outputTokens = finalOutputTokens;
+		state.usage.outputTokensComputed = undefined; // Clear to avoid confusion
+
 		state.usage.totalTokens =
 			(state.usage.inputTokens || 0) +
-			(state.usage.outputTokens || 0) +
+			finalOutputTokens +
 			(state.usage.cacheReadInputTokens || 0) +
 			(state.usage.cacheCreationInputTokens || 0);
 
 		state.usage.costUsd = await estimateCostUSD(state.usage.model, {
 			inputTokens: state.usage.inputTokens,
-			outputTokens: state.usage.outputTokens,
+			outputTokens: finalOutputTokens,
 			cacheReadInputTokens: state.usage.cacheReadInputTokens,
 			cacheCreationInputTokens: state.usage.cacheCreationInputTokens,
 		});
+
+		// Calculate tokens per second using actual streaming duration
+		if (
+			state.firstTokenTimestamp &&
+			state.lastTokenTimestamp &&
+			finalOutputTokens > 0
+		) {
+			const durationSec =
+				(state.lastTokenTimestamp - state.firstTokenTimestamp) / 1000;
+			if (durationSec > 0) {
+				state.usage.tokensPerSecond = finalOutputTokens / durationSec;
+			} else if (finalOutputTokens > 0) {
+				// If tokens were generated instantly, use a very small duration
+				state.usage.tokensPerSecond = finalOutputTokens / 0.001;
+			}
+		}
 	}
 
 	// Update request with final data
@@ -219,8 +369,10 @@ async function handleEnd(msg: EndMessage): Promise<void> {
 						outputTokens: state.usage.outputTokens,
 						cacheReadInputTokens: state.usage.cacheReadInputTokens,
 						cacheCreationInputTokens: state.usage.cacheCreationInputTokens,
+						tokensPerSecond: state.usage.tokensPerSecond,
 					}
 				: undefined,
+			state.agentUsed,
 		),
 	);
 
@@ -265,7 +417,7 @@ async function handleEnd(msg: EndMessage): Promise<void> {
 	if (state.usage.model && startMessage.accountId !== NO_ACCOUNT_ID) {
 		log.info(
 			`Usage for request ${startMessage.requestId}: Model: ${state.usage.model}, ` +
-				`Tokens: ${state.usage.totalTokens || 0}, Cost: ${state.usage.costUsd?.toFixed(4) || "0"}`,
+				`Tokens: ${state.usage.totalTokens || 0}, Cost: ${formatCost(state.usage.costUsd)}`,
 		);
 	}
 

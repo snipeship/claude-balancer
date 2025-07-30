@@ -9,7 +9,7 @@ Commands:
   add <name> [--mode <max|console>] [--tier <1|5|20>]
     Add a new account using OAuth
     --mode: Account type (optional, will prompt if not provided)
-    --tier: Account tier for weighted load balancing (optional, will prompt for Max accounts)
+    --tier: Account tier (1, 5, or 20) (optional, will prompt for Max accounts)
 
   list
     List all accounts with their details
@@ -29,6 +29,9 @@ Commands:
 
   clear-history
     Clear request history
+
+  analyze
+    Analyze database performance and index usage
 
   help
     Show this help message

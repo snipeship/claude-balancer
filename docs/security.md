@@ -1,6 +1,6 @@
 # Security Documentation
 
-**Last Security Review**: July 27, 2025
+**Last Security Review**: July 30, 2025
 
 This document outlines the security considerations, practices, and recommendations for the ccflare load balancer system.
 
@@ -25,10 +25,10 @@ This document outlines the security considerations, practices, and recommendatio
 
 Based on the latest security review, the following critical issues require immediate attention:
 
-1. **Memory Exhaustion Risk**: Streaming responses have NO size limit (`maxBytes: Infinity`). Implement a 10MB limit urgently.
-2. **No Authentication**: All endpoints are publicly accessible. Implement API key authentication immediately.
-3. **Network Exposure**: Server binds to 0.0.0.0. Use firewall rules or bind to localhost only.
-4. **Plaintext Tokens**: OAuth tokens stored unencrypted. Implement AES-256-GCM encryption.
+1. **No Authentication**: All endpoints are publicly accessible. Implement API key authentication immediately.
+2. **Network Exposure**: Server binds to 0.0.0.0. Use firewall rules or bind to localhost only.
+3. **Plaintext Tokens**: OAuth tokens stored unencrypted. Implement AES-256-GCM encryption.
+4. **No CORS Protection**: Server does not set any CORS headers, allowing requests from any origin.
 
 ## Table of Contents
 
@@ -106,6 +106,18 @@ generateAuthUrl(config: OAuthConfig, pkce: PKCEChallenge): string {
     url.searchParams.set("code_challenge_method", "S256");
     // ...
 }
+
+// Session-based OAuth flow with secure verifier storage
+// packages/database/src/migrations.ts
+CREATE TABLE IF NOT EXISTS oauth_sessions (
+    id TEXT PRIMARY KEY,
+    account_name TEXT NOT NULL,
+    verifier TEXT NOT NULL,  // PKCE verifier stored securely
+    mode TEXT NOT NULL,
+    tier INTEGER DEFAULT 1,
+    created_at INTEGER NOT NULL,
+    expires_at INTEGER NOT NULL  // Auto-cleanup of expired sessions
+)
 
 // Scopes requested from Anthropic
 scopes: ["org:create_api_key", "user:profile", "user:inference"]
@@ -239,7 +251,17 @@ iptables -A INPUT -p tcp --dport 8080 -s 127.0.0.1 -j ACCEPT
 iptables -A INPUT -p tcp --dport 8080 -j DROP
 ```
 
-**Recommended Enhancement**: Modify the server to support a HOST environment variable for binding configuration.
+**Recommended Enhancement**: Modify the server to support a HOST environment variable:
+```typescript
+// Proposed server.ts modification
+const server = serve({
+    port: runtime.port,
+    hostname: process.env.HOST || "0.0.0.0", // Allow binding configuration
+    async fetch(req) {
+        // Handle requests
+    }
+});
+```
 
 #### 2. Reverse Proxy Setup
 ```nginx
@@ -292,34 +314,45 @@ const payload = {
     }
 };
 
-// Streaming responses (recent update)
+// Streaming responses (current implementation)
+// packages/proxy/src/response-handler.ts
 if (isStream && response.body) {
-    const teedStream = teeStream(response.body, {
-        maxBytes: Infinity, // WARNING: No limit - captures entire stream
-        onClose: (buffered) => {
-            const combined = combineChunks(buffered);
-            const updatedPayload = {
-                ...payload,
-                response: {
-                    ...payload.response,
-                    body: combined.length > 0 ? combined.toString("base64") : null,
-                },
-                meta: {
-                    // No truncation tracking since there's no limit
-                },
-            };
-            ctx.asyncWriter.enqueue(() =>
-                ctx.dbOps.saveRequestPayload(requestMeta.id, updatedPayload),
-            );
+    // Clone response for background analytics consumption
+    const analyticsClone = response.clone();
+    
+    (async () => {
+        try {
+            const reader = analyticsClone.body?.getReader();
+            if (!reader) return;
+            
+            while (true) {
+                const { value, done } = await reader.read();
+                if (done) break;
+                if (value) {
+                    // Send chunks to worker for processing
+                    const chunkMsg: ChunkMessage = {
+                        type: "chunk",
+                        requestId,
+                        data: value,
+                    };
+                    ctx.usageWorker.postMessage(chunkMsg);
+                }
+            }
+        } catch (err) {
+            // Handle errors...
         }
-    });
+    })();
+    
+    // Return original response untouched
+    return response;
 }
 ```
 
 **Privacy Concerns**: 
 - Full request/response bodies are stored, potentially containing sensitive information
-- **CRITICAL**: Streaming responses are captured with NO size limit (maxBytes: Infinity), which could lead to memory exhaustion
-- Request bodies are marked as "[streamed]" in logs to reduce storage
+- Streaming responses are cloned and processed chunk by chunk in background workers
+- Chunks are accumulated in memory without explicit size limits in the worker process
+- Request bodies are encoded as base64 in logs
 - Error payloads include full error details and request metadata
 - Asynchronous writes may delay data persistence
 
@@ -526,19 +559,27 @@ interface User {
 **Mitigation**: Implement per-client rate limiting
 
 ### 6. CORS Misconfiguration
-**Risk**: Dashboard API accessible from unauthorized origins
+**Risk**: Dashboard API accessible from unauthorized origins (currently no CORS headers are set)
 **Mitigation**: Implement CORS headers:
 ```typescript
-// Recommended CORS configuration
-const corsHeaders = {
-    'Access-Control-Allow-Origin': process.env.ALLOWED_ORIGINS || 'http://localhost:8080',
-    'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, X-API-Key',
-    'Access-Control-Max-Age': '86400',
-    'X-Content-Type-Options': 'nosniff',
-    'X-Frame-Options': 'DENY',
-    'X-XSS-Protection': '1; mode=block'
-};
+// Recommended implementation in server.ts or API router
+function addSecurityHeaders(response: Response): Response {
+    const headers = new Headers(response.headers);
+    headers.set('Access-Control-Allow-Origin', process.env.ALLOWED_ORIGINS || 'http://localhost:8080');
+    headers.set('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
+    headers.set('Access-Control-Allow-Headers', 'Content-Type, X-API-Key');
+    headers.set('Access-Control-Max-Age', '86400');
+    headers.set('X-Content-Type-Options', 'nosniff');
+    headers.set('X-Frame-Options', 'DENY');
+    headers.set('X-XSS-Protection', '1; mode=block');
+    headers.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+    
+    return new Response(response.body, {
+        status: response.status,
+        statusText: response.statusText,
+        headers
+    });
+}
 ```
 
 ### 7. Dependency Vulnerabilities
@@ -551,7 +592,7 @@ const corsHeaders = {
 
 ### 9. Streaming Response Capture
 **Risk**: Large streaming responses consuming excessive memory/storage
-**Mitigation**: **CRITICAL**: Currently NO limit implemented (maxBytes: Infinity) - urgent fix needed
+**Mitigation**: Implement size limits in worker chunk accumulation; monitor memory usage for large streams
 
 ### 10. Asynchronous Database Writes
 **Risk**: Data loss if application crashes before async writes complete
@@ -559,11 +600,26 @@ const corsHeaders = {
 
 ## Recent Security Updates
 
-### Streaming Response Capture (Latest)
-- **Change**: Added ability to capture streaming API responses for analytics
-- **Security Consideration**: Currently NO size limit (maxBytes: Infinity) - this is a CRITICAL security issue that could lead to memory exhaustion
-- **Implementation**: Uses stream tee mechanism to capture data without blocking response delivery
-- **Recommendation**: Implement a reasonable size limit (e.g., 10MB) to prevent memory exhaustion attacks
+### Response Header Sanitization (July 2025)
+- **Change**: Added `sanitizeProxyHeaders` utility function
+- **Security Benefit**: Removes hop-by-hop headers (content-encoding, content-length, transfer-encoding) to prevent header injection attacks
+- **Implementation**: Applied in Anthropic provider's `prepareProxyResponse` method
+
+### Streaming Response Processing (Current)
+- **Change**: Streaming responses are cloned and processed in background workers
+- **Security Consideration**: Chunks are accumulated in memory without explicit size limits, though processed incrementally
+- **Implementation**: Uses Response.clone() to avoid blocking the original stream
+- **Recommendation**: Implement memory monitoring and chunk size limits in worker
+
+### Session-Based OAuth Flow
+- **Change**: Migrated from direct account creation to session-based OAuth endpoints
+- **Security Benefit**: Improved PKCE flow with session management
+- **Implementation**: Stores verifier securely in oauth_sessions table with expiration
+
+### Agent-Based Model Selection
+- **Feature**: Added ability to override model selection based on agent preferences
+- **Security Consideration**: Model modifications are tracked in request metadata
+- **Implementation**: Intercepts and modifies request body before proxying
 
 ### Asynchronous Database Writer
 - **Change**: Introduced AsyncDbWriter for non-blocking database operations
@@ -577,25 +633,35 @@ const corsHeaders = {
 
 ## Security Roadmap
 
-### Phase 1: Token Encryption (Priority: High)
+### Phase 1: Authentication & Access Control (Priority: CRITICAL)
+- Implement API key authentication middleware
+- Add rate limiting per client/IP
+- Implement CORS headers with proper origin restrictions
+- Add audit logging for all API access
+
+### Phase 2: Token Encryption (Priority: High)
 - Implement AES-256-GCM encryption for stored tokens
-- Add key management system
-- Migration tool for existing tokens
+- Add key management system (environment variable or OS keychain)
+- Migration tool for existing plaintext tokens
+- Secure key rotation mechanism
 
-### Phase 2: Authentication (Priority: High)
-- API key authentication for proxy endpoints
-- Dashboard authentication system
-- Audit logging for all access
-
-### Phase 3: Network Hardening (Priority: Medium)
+### Phase 3: Network Hardening (Priority: High)
+- Add HOST binding configuration (localhost by default)
 - TLS support in proxy server
 - Certificate pinning for API calls
 - IP allowlisting capability
 
-### Phase 4: Advanced Security (Priority: Low)
+### Phase 4: Memory & Resource Protection (Priority: Medium)
+- Implement streaming response size limits
+- Add memory monitoring for worker processes
+- Request body size validation
+- Database size management and rotation
+
+### Phase 5: Advanced Security (Priority: Low)
 - Hardware security module (HSM) integration
 - Multi-factor authentication
 - Anomaly detection system
+- Security scanning integration
 
 ## Environment Variables
 
@@ -697,6 +763,54 @@ sqlite3 ccflare.db "SELECT * FROM audit_log WHERE action LIKE '%config%'"
    - Review load balancing strategy
    - Consider implementing request queuing
 
+## Security Testing & Auditing
+
+### Running Security Checks
+
+1. **Dependency Audit**
+```bash
+# Check for known vulnerabilities in dependencies
+bun audit
+
+# Update dependencies to latest secure versions
+bun update
+```
+
+2. **Code Security Analysis**
+```bash
+# Run linting with security rules
+bun run lint
+
+# Type checking can catch security issues
+bun run typecheck
+```
+
+3. **Manual Security Checklist**
+- [ ] Verify no hardcoded credentials in code
+- [ ] Check for exposed sensitive endpoints
+- [ ] Review error messages for information leakage
+- [ ] Test rate limiting effectiveness
+- [ ] Verify token rotation works correctly
+- [ ] Check database file permissions
+- [ ] Review log files for sensitive data
+
+### Security Testing Commands
+
+```bash
+# Test unauthorized access (should fail in secured setup)
+curl http://localhost:8080/api/accounts
+
+# Test CORS headers (should be restricted)
+curl -H "Origin: http://evil.com" \
+     -H "Access-Control-Request-Method: GET" \
+     -H "Access-Control-Request-Headers: X-Requested-With" \
+     -X OPTIONS \
+     http://localhost:8080/api/accounts
+
+# Check for exposed internal headers
+curl -I http://localhost:8080/api/health
+```
+
 ## Conclusion
 
 Security is an ongoing process. This documentation should be reviewed and updated regularly as the system evolves and new threats emerge. All contributors should familiarize themselves with these security considerations and follow the best practices outlined above.
@@ -705,7 +819,16 @@ Security is an ongoing process. This documentation should be reviewed and update
 1. **ccflare prioritizes functionality over security** - suitable for development, not production
 2. **Network isolation is critical** - always restrict access to trusted networks
 3. **Token security requires enhancement** - implement encryption for production use
-4. **Monitoring is essential** - regular review of logs can detect security issues early
-5. **Regular updates needed** - keep dependencies and documentation current
+4. **Authentication is missing** - all endpoints are currently public
+5. **Monitoring is essential** - regular review of logs can detect security issues early
+6. **Regular updates needed** - keep dependencies and documentation current
+
+### Immediate Actions for Production Use
+1. Implement authentication middleware before exposing to any network
+2. Bind server to localhost only
+3. Set up reverse proxy with TLS
+4. Encrypt OAuth tokens in database
+5. Implement rate limiting
+6. Add security headers (CORS, CSP, etc.)
 
 For security-related questions or concerns, please refer to the vulnerability disclosure process or contact the project maintainers directly.

@@ -1,14 +1,13 @@
 import { registerDisposable, unregisterDisposable } from "@ccflare/core";
-import type { RuntimeConfig as ConfigRuntimeConfig } from "@ccflare/config";
-import { DatabaseOperations, type DatabaseConfig, type DatabaseRetryConfig } from "./index";
+import { DatabaseOperations, type RuntimeConfig } from "./index";
 
 let instance: DatabaseOperations | null = null;
 let dbPath: string | undefined;
-let runtimeConfig: ConfigRuntimeConfig | undefined;
+let runtimeConfig: RuntimeConfig | undefined;
 
 export function initialize(
 	dbPathParam?: string,
-	runtimeConfigParam?: ConfigRuntimeConfig,
+	runtimeConfigParam?: RuntimeConfig,
 ): void {
 	dbPath = dbPathParam;
 	runtimeConfig = runtimeConfigParam;
@@ -16,18 +15,7 @@ export function initialize(
 
 export function getInstance(): DatabaseOperations {
 	if (!instance) {
-		// Extract database configuration from runtime config
-		const dbConfig: DatabaseConfig | undefined = runtimeConfig?.database ? {
-			walMode: runtimeConfig.database.walMode,
-			busyTimeoutMs: runtimeConfig.database.busyTimeoutMs,
-			cacheSize: runtimeConfig.database.cacheSize,
-			synchronous: runtimeConfig.database.synchronous,
-			mmapSize: runtimeConfig.database.mmapSize,
-		} : undefined;
-
-		const retryConfig: DatabaseRetryConfig | undefined = runtimeConfig?.database?.retry;
-
-		instance = new DatabaseOperations(dbPath, dbConfig, retryConfig);
+		instance = new DatabaseOperations(dbPath);
 		if (runtimeConfig) {
 			instance.setRuntimeConfig(runtimeConfig);
 		}

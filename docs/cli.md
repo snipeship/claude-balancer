@@ -10,6 +10,7 @@ The ccflare CLI provides a command-line interface for managing OAuth accounts, m
   - [Account Management](#account-management)
   - [Statistics and History](#statistics-and-history)
   - [System Commands](#system-commands)
+  - [Server and Monitoring](#server-and-monitoring)
 - [Usage Examples](#usage-examples)
 - [Configuration](#configuration)
 - [Environment Variables](#environment-variables)
@@ -35,21 +36,26 @@ cd ccflare
 bun install
 ```
 
-3. Run the CLI:
+3. Build the CLI:
 ```bash
-bun cli <command> [options]
+bun run build
+```
+
+4. Run the CLI:
+```bash
+ccflare [options]
 ```
 
 ### First-time Setup
 
 1. Add your first OAuth account:
 ```bash
-bun cli add myaccount
+ccflare --add-account myaccount
 ```
 
 2. Start the load balancer server:
 ```bash
-bun start
+ccflare --serve
 ```
 
 ## Global Options and Help
@@ -59,102 +65,109 @@ bun start
 Display all available commands and options:
 
 ```bash
-bun cli help
+ccflare --help
 ```
 
-Or simply run without any command:
+Or use the short form:
 
 ```bash
-bun cli
+ccflare -h
 ```
 
 ### Help Output Format
 
 ```
-Usage: ccflare-cli <command> [options]
+🎯 ccflare - Load Balancer for Claude
 
-Commands:
-  add <name> [options]      Add a new account using OAuth
-  list                      List all accounts with their details
-  remove <name> [options]   Remove an account
-  pause <name>              Pause an account
-  resume <name>             Resume a paused account
-  reset-stats               Reset request counts
-  clear-history             Clear request history
-  help                      Show help message
+Usage: ccflare [options]
+
+Options:
+  --serve              Start API server with dashboard
+  --port <number>      Server port (default: 8080, or PORT env var)
+  --logs [N]           Stream latest N lines then follow
+  --stats              Show statistics (JSON output)
+  --add-account <name> Add a new account
+    --mode <max|console>  Account mode (default: max)
+    --tier <1|5|20>       Account tier (default: 1)
+  --list               List all accounts
+  --remove <name>      Remove an account
+  --pause <name>       Pause an account
+  --resume <name>      Resume an account
+  --analyze            Analyze database performance
+  --reset-stats        Reset usage statistics
+  --clear-history      Clear request history
+  --help, -h           Show this help message
+
+Interactive Mode:
+  ccflare          Launch interactive TUI (default)
 ```
 
 ## Command Reference
 
 ### Account Management
 
-#### `add <name>`
+#### `--add-account <name>`
 
 Add a new OAuth account to the load balancer pool.
 
 **Syntax:**
 ```bash
-bun cli add <name> [--mode <max|console>] [--tier <1|5|20>]
+ccflare --add-account <name> [--mode <max|console>] [--tier <1|5|20>]
 ```
 
 **Options:**
-- `--mode`: Account type (optional)
+- `--mode`: Account type (optional, defaults to "max")
   - `max`: Claude Max account
   - `console`: Console account
-- `--tier`: Account tier (optional, Max accounts only)
+- `--tier`: Account tier (optional, defaults to 1, Max accounts only)
   - `1`: Tier 1 account
   - `5`: Tier 5 account
   - `20`: Tier 20 account
 
 **Interactive Flow:**
-1. If mode not provided, prompts for account type selection
-2. If tier not provided (Max accounts only), prompts for tier selection
+1. If mode not provided, defaults to "max"
+2. If tier not provided (Max accounts only), defaults to 1
 3. Opens browser for OAuth authentication
 4. Waits for OAuth callback on localhost:7856
 5. Stores account credentials securely in the database
 
-#### `list`
+#### `--list`
 
 Display all configured accounts with their current status.
 
 **Syntax:**
 ```bash
-bun cli list
+ccflare --list
 ```
 
-**Output Columns:**
-- **Name**: Account identifier
-- **Type**: Account provider (claude-max or claude-console)
-- **Tier**: Account tier (1/5/20 for Max, N/A for Console)
-- **Requests**: Current/Total request count
-- **Token**: Token validity status
-- **Status**: Rate limit status and timing
-- **Session**: Session information and expiry
+**Output Format:**
+```
+Accounts:
+  - account1 (max mode, tier 5)
+  - account2 (console mode, tier 1)
+```
 
-#### `remove <name>`
+#### `--remove <name>`
 
 Remove an account from the configuration.
 
 **Syntax:**
 ```bash
-bun cli remove <name> [--force]
+ccflare --remove <name>
 ```
 
-**Options:**
-- `--force`: Skip confirmation prompt
-
 **Behavior:**
-- Prompts for confirmation unless `--force` is used
-- Removes account from database
+- Removes account from database immediately
 - Cleans up associated session data
+- For confirmation prompts, use the older `ccflare-cli remove <name>` command
 
-#### `pause <name>`
+#### `--pause <name>`
 
 Temporarily exclude an account from the load balancer rotation.
 
 **Syntax:**
 ```bash
-bun cli pause <name>
+ccflare --pause <name>
 ```
 
 **Use Cases:**
@@ -162,24 +175,36 @@ bun cli pause <name>
 - Manual rate limit management
 - Maintenance or debugging
 
-#### `resume <name>`
+#### `--resume <name>`
 
 Re-enable a paused account for load balancing.
 
 **Syntax:**
 ```bash
-bun cli resume <name>
+ccflare --resume <name>
 ```
 
 ### Statistics and History
 
-#### `reset-stats`
+#### `--stats`
+
+Display current statistics in JSON format.
+
+**Syntax:**
+```bash
+ccflare --stats
+```
+
+**Output:**
+Returns JSON-formatted statistics including account usage, request counts, and performance metrics.
+
+#### `--reset-stats`
 
 Reset request counters for all accounts.
 
 **Syntax:**
 ```bash
-bun cli reset-stats
+ccflare --reset-stats
 ```
 
 **Effects:**
@@ -187,13 +212,13 @@ bun cli reset-stats
 - Preserves account configuration
 - Does not affect rate limit timers
 
-#### `clear-history`
+#### `--clear-history`
 
 Remove all request history records.
 
 **Syntax:**
 ```bash
-bun cli clear-history
+ccflare --clear-history
 ```
 
 **Effects:**
@@ -203,29 +228,71 @@ bun cli clear-history
 
 ### System Commands
 
-#### Dashboard Access
+#### `--analyze`
 
-The web dashboard runs as a separate service:
+Analyze database performance and index usage.
 
+**Syntax:**
 ```bash
-# Development mode with hot reload
-bun dev:dashboard
-
-# Or access through the running server
-# Default: http://localhost:8080/_dashboard
+ccflare --analyze
 ```
 
-#### Terminal UI (TUI)
+**Output:**
+- Database performance metrics
+- Index usage statistics
+- Query optimization suggestions
 
-Launch the interactive terminal interface:
+#### Interactive Terminal UI (TUI)
+
+Launch the interactive terminal interface (default mode):
 
 ```bash
-# Run TUI directly
-bun dev
+ccflare
+```
 
-# Or build and run
-bun build:tui
-bun run apps/tui/dist/main.js
+**Features:**
+- Real-time account monitoring
+- Request logs viewing
+- Performance analytics
+- Interactive account management
+
+### Server and Monitoring
+
+#### `--serve`
+
+Start the API server with dashboard.
+
+**Syntax:**
+```bash
+ccflare --serve [--port <number>]
+```
+
+**Options:**
+- `--port`: Server port (default: 8080, or PORT env var)
+
+**Access:**
+- API endpoint: `http://localhost:8080`
+- Dashboard: `http://localhost:8080/_dashboard`
+
+#### `--logs [N]`
+
+Stream request logs in real-time.
+
+**Syntax:**
+```bash
+ccflare --logs [N]
+```
+
+**Options:**
+- `N`: Number of historical lines to display before streaming (optional)
+
+**Examples:**
+```bash
+# Stream live logs only
+ccflare --logs
+
+# Show last 50 lines then stream
+ccflare --logs 50
 ```
 
 ## Usage Examples
@@ -234,42 +301,68 @@ bun run apps/tui/dist/main.js
 
 ```bash
 # Add a Claude Max account with tier 5
-bun cli add work-account --mode max --tier 5
+ccflare --add-account work-account --mode max --tier 5
 
 # Add a Console account
-bun cli add personal-account --mode console
+ccflare --add-account personal-account --mode console
 
 # List all accounts
-bun cli list
+ccflare --list
 
-# Check specific account status
-bun cli list | grep work-account
+# View statistics
+ccflare --stats
+```
+
+### Server Operations
+
+```bash
+# Start server on default port
+ccflare --serve
+
+# Start server on custom port
+ccflare --serve --port 3000
+
+# Stream logs
+ccflare --logs
+
+# View last 100 lines then stream
+ccflare --logs 100
 ```
 
 ### Managing Rate Limits
 
 ```bash
 # Pause account hitting rate limits
-bun cli pause work-account
+ccflare --pause work-account
 
 # Resume after cooldown
-bun cli resume work-account
+ccflare --resume work-account
 
 # Reset statistics for fresh start
-bun cli reset-stats
+ccflare --reset-stats
 ```
 
 ### Maintenance Operations
 
 ```bash
-# Remove old account with confirmation
-bun cli remove old-account
-
-# Force remove without confirmation
-bun cli remove test-account --force
+# Remove account
+ccflare --remove old-account
 
 # Clear old request logs
-bun cli clear-history
+ccflare --clear-history
+
+# Analyze database performance
+ccflare --analyze
+```
+
+### Interactive Mode
+
+```bash
+# Launch interactive TUI (default)
+ccflare
+
+# TUI launches with auto-started server
+# Navigate with arrow keys, tab between sections
 ```
 
 ### Automation Examples
@@ -277,14 +370,17 @@ bun cli clear-history
 ```bash
 # Add multiple accounts via script
 for i in {1..3}; do
-  bun cli add "account-$i" --mode max --tier 5
+  ccflare --add-account "account-$i" --mode max --tier 5
 done
 
 # Monitor account status
-watch -n 5 'bun cli list'
+watch -n 5 'ccflare --list'
 
 # Automated cleanup
-bun cli clear-history && bun cli reset-stats
+ccflare --clear-history && ccflare --reset-stats
+
+# Export statistics for monitoring
+ccflare --stats > stats.json
 ```
 
 ## Configuration
@@ -435,7 +531,10 @@ export ccflare_DEBUG=1
 export LOG_LEVEL=DEBUG
 
 # Run with verbose output
-bun cli list
+ccflare --list
+
+# Stream debug logs
+ccflare --logs
 ```
 
 ### Getting Support
@@ -450,19 +549,23 @@ bun cli list
 1. **Regular Maintenance**
    - Clear history periodically to manage database size
    - Reset stats monthly for accurate metrics
-   - Monitor account health with regular `list` commands
+   - Monitor account health with regular `ccflare --list` commands
+   - Use `ccflare --analyze` to optimize database performance
 
 2. **Account Management**
    - Use descriptive account names
    - Distribute load across multiple accounts
    - Keep accounts of similar tiers for consistent performance
+   - Pause accounts proactively when approaching rate limits
 
 3. **Security**
    - Protect configuration directory permissions
    - Don't share OAuth tokens or session data
    - Rotate accounts periodically
+   - Monitor logs with `ccflare --logs` for suspicious activity
 
 4. **Performance**
    - Use higher-tier accounts for heavy workloads
    - Implement client-side retry logic
-   - Monitor rate limit patterns
+   - Monitor rate limit patterns with `ccflare --stats`
+   - Run server with `ccflare --serve` for production use

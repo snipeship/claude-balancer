@@ -2,6 +2,7 @@
 	"name": "@ccflare/server",
 	"version": "0.1.0",
 	"type": "module",
+	"main": "./src/server.ts",
 	"scripts": {
 		"dev": "bun run --hot src/server.ts",
 		"start": "bun run src/server.ts",

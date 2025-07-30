@@ -1,6 +1,7 @@
 import type { Config } from "@ccflare/config";
 import type { DatabaseOperations } from "@ccflare/database";
-import { generatePKCE, getOAuthProvider } from "@ccflare/providers";
+import { createOAuthFlow } from "@ccflare/oauth-flow";
+import type { AccountListItem } from "@ccflare/types";
 import {
 	type PromptAdapter,
 	promptAccountRemovalConfirmation,
@@ -8,6 +9,7 @@ import {
 } from "../prompts/index";
 import { openBrowser } from "../utils/browser";
 
+// Re-export types with adapter extension for CLI-specific options
 export interface AddAccountOptions {
 	name: string;
 	mode?: "max" | "console";
@@ -15,20 +17,11 @@ export interface AddAccountOptions {
 	adapter?: PromptAdapter;
 }
 
-export interface AccountListItem {
-	id: string;
-	name: string;
-	provider: string;
-	tierDisplay: string;
-	created: Date;
-	lastUsed: Date | null;
-	requestCount: number;
-	totalRequests: number;
-	paused: boolean;
-	tokenStatus: "valid" | "expired";
-	rateLimitStatus: string;
-	sessionInfo: string;
-	tier: number;
+// Re-export AccountListItem from types for backward compatibility
+export type { AccountListItem } from "@ccflare/types";
+
+// Add mode property to AccountListItem for CLI display
+export interface AccountListItemWithMode extends AccountListItem {
 	mode: "max" | "console";
 }
 
@@ -46,19 +39,9 @@ export async function addAccount(
 		tier: providedTier,
 		adapter = stdPromptAdapter,
 	} = options;
-	const runtime = config.getRuntime();
 
-	// Check if account exists
-	const existingAccounts = dbOps.getAllAccounts();
-	if (existingAccounts.some((a) => a.name === name)) {
-		throw new Error(`Account with name '${name}' already exists`);
-	}
-
-	// Get provider
-	const oauthProvider = getOAuthProvider("anthropic");
-	if (!oauthProvider) {
-		throw new Error("Anthropic OAuth provider not found");
-	}
+	// Create OAuth flow instance
+	const oauthFlow = await createOAuthFlow(dbOps, config);
 
 	// Prompt for mode if not provided
 	const mode =
@@ -68,13 +51,12 @@ export async function addAccount(
 			{ label: "Claude Console account", value: "console" },
 		]));
 
-	// Generate PKCE
-	const pkce = await generatePKCE();
-	const oauthConfig = oauthProvider.getOAuthConfig(mode);
-	oauthConfig.clientId = runtime.clientId;
-
-	// Generate auth URL
-	const authUrl = oauthProvider.generateAuthUrl(oauthConfig, pkce);
+	// Begin OAuth flow
+	const flowResult = await oauthFlow.begin({
+		name,
+		mode: mode as "max" | "console",
+	});
+	const { authUrl, sessionId } = flowResult;
 
 	// Open browser and prompt for code
 	console.log(`\nOpening browser to authenticate...`);
@@ -85,14 +67,6 @@ export async function addAccount(
 
 	// Get authorization code
 	const code = await adapter.input("\nEnter the authorization code: ");
-
-	// Exchange code for tokens
-	console.log("\nExchanging code for tokens...");
-	const tokens = await oauthProvider.exchangeCode(
-		code,
-		pkce.verifier,
-		oauthConfig,
-	);
 
 	// Get tier for Max accounts
 	const tier =
@@ -108,26 +82,11 @@ export async function addAccount(
 				))
 			: 1;
 
-	// Create account
-	const db = dbOps.getDatabase();
-	const accountId = crypto.randomUUID();
-	db.run(
-		`
-		INSERT INTO accounts (
-			id, name, provider, refresh_token, access_token, expires_at, 
-			created_at, request_count, total_requests, account_tier
-		) VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, ?)
-		`,
-		[
-			accountId,
-			name,
-			"anthropic",
-			tokens.refreshToken,
-			tokens.accessToken,
-			tokens.expiresAt,
-			Date.now(),
-			tier,
-		],
+	// Complete OAuth flow
+	console.log("\nExchanging code for tokens...");
+	const _account = await oauthFlow.complete(
+		{ sessionId, code, tier, name },
+		flowResult,
 	);
 
 	console.log(`\nAccount '${name}' added successfully!`);
@@ -237,11 +196,12 @@ export async function removeAccountWithConfirmation(
 }
 
 /**
- * Pause an account by name
+ * Toggle account pause state (shared logic for pause/resume)
  */
-export function pauseAccount(
+function toggleAccountPause(
 	dbOps: DatabaseOperations,
 	name: string,
+	shouldPause: boolean,
 ): { success: boolean; message: string } {
 	const db = dbOps.getDatabase();
 
@@ -259,19 +219,37 @@ export function pauseAccount(
 		};
 	}
 
-	if (account.paused === 1) {
+	const isPaused = account.paused === 1;
+	const _action = shouldPause ? "pause" : "resume";
+	const actionPast = shouldPause ? "paused" : "resumed";
+
+	if (isPaused === shouldPause) {
 		return {
 			success: false,
-			message: `Account '${name}' is already paused`,
+			message: `Account '${name}' is already ${actionPast}`,
 		};
 	}
 
-	dbOps.pauseAccount(account.id);
+	if (shouldPause) {
+		dbOps.pauseAccount(account.id);
+	} else {
+		dbOps.resumeAccount(account.id);
+	}
 
 	return {
 		success: true,
-		message: `Account '${name}' paused successfully`,
+		message: `Account '${name}' ${actionPast} successfully`,
 	};
+}
+
+/**
+ * Pause an account by name
+ */
+export function pauseAccount(
+	dbOps: DatabaseOperations,
+	name: string,
+): { success: boolean; message: string } {
+	return toggleAccountPause(dbOps, name, true);
 }
 
 /**
@@ -281,33 +259,5 @@ export function resumeAccount(
 	dbOps: DatabaseOperations,
 	name: string,
 ): { success: boolean; message: string } {
-	const db = dbOps.getDatabase();
-
-	// Get account ID by name
-	const account = db
-		.query<{ id: string; paused: 0 | 1 }, [string]>(
-			"SELECT id, COALESCE(paused, 0) as paused FROM accounts WHERE name = ?",
-		)
-		.get(name);
-
-	if (!account) {
-		return {
-			success: false,
-			message: `Account '${name}' not found`,
-		};
-	}
-
-	if (account.paused === 0) {
-		return {
-			success: false,
-			message: `Account '${name}' is not paused`,
-		};
-	}
-
-	dbOps.resumeAccount(account.id);
-
-	return {
-		success: true,
-		message: `Account '${name}' resumed successfully`,
-	};
+	return toggleAccountPause(dbOps, name, false);
 }
