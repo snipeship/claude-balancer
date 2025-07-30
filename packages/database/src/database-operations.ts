@@ -2,6 +2,7 @@ import { Database } from "bun:sqlite";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import type { Disposable } from "@ccflare/core";
+import type { RuntimeConfig } from "@ccflare/config";
 import type { Account, StrategyStore } from "@ccflare/types";
 import { ensureSchema, runMigrations } from "./migrations";
 import { resolveDbPath } from "./paths";
@@ -14,12 +15,7 @@ import {
 } from "./repositories/request.repository";
 import { StatsRepository } from "./repositories/stats.repository";
 import { StrategyRepository } from "./repositories/strategy.repository";
-import { withDatabaseRetry, withDatabaseRetrySync } from "./retry";
-
-export interface RuntimeConfig {
-	sessionDurationMs?: number;
-	database?: DatabaseConfig;
-}
+import { withDatabaseRetrySync } from "./retry";
 
 export interface DatabaseConfig {
 	/** Enable WAL (Write-Ahead Logging) mode for better concurrency */

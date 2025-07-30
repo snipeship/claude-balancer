@@ -4,7 +4,8 @@ export { DatabaseOperations };
 
 // Re-export other utilities
 export { AsyncDbWriter } from "./async-writer";
-export type { RuntimeConfig } from "./database-operations";
+export type { RuntimeConfig } from "@ccflare/config";
+export type { DatabaseConfig, DatabaseRetryConfig } from "./database-operations";
 export { DatabaseFactory } from "./factory";
 export { ensureSchema, runMigrations } from "./migrations";
 export { resolveDbPath } from "./paths";
