@@ -10,19 +10,6 @@
         "typescript": "^5.0.0",
       },
     },
-    "apps/cli": {
-      "name": "@ccflare/cli",
-      "version": "0.1.0",
-      "bin": {
-        "ccflare": "./dist/cli",
-      },
-      "dependencies": {
-        "@ccflare/cli-commands": "workspace:*",
-        "@ccflare/config": "workspace:*",
-        "@ccflare/core": "workspace:*",
-        "@ccflare/database": "workspace:*",
-      },
-    },
     "apps/lander": {
       "name": "@ccflare/lander",
       "version": "1.0.0",
@@ -310,8 +297,6 @@
     "@biomejs/cli-win32-x64": ["@biomejs/cli-win32-x64@2.1.2", "", { "os": "win32", "cpu": "x64" }, "sha512-9zajnk59PMpjBkty3bK2IrjUsUHvqe9HWwyAWQBjGLE7MIBjbX2vwv1XPEhmO2RRuGoTkVx3WCanHrjAytICLA=="],
 
     "@ccflare/agents": ["@ccflare/agents@workspace:packages/agents"],
-
-    "@ccflare/cli": ["@ccflare/cli@workspace:apps/cli"],
 
     "@ccflare/cli-commands": ["@ccflare/cli-commands@workspace:packages/cli-commands"],
 
