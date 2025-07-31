@@ -16,7 +16,7 @@ import {
 } from "./handlers/agents";
 import { createAnalyticsHandler } from "./handlers/analytics";
 import { createConfigHandlers } from "./handlers/config";
-import { createHealthHandler } from "./handlers/health";
+import { createHealthHandler, createDatabaseHealthHandler } from "./handlers/health";
 import { createLogsStreamHandler } from "./handlers/logs";
 import { createLogsHistoryHandler } from "./handlers/logs-history";
 import {
@@ -52,28 +52,34 @@ export class APIRouter {
 	private registerHandlers(): void {
 		const { db, config, dbOps } = this.context;
 
+		// Type assertion: DrizzleDatabaseOperations implements all DatabaseOperations methods
+		// The factory always returns DrizzleDatabaseOperations, so this is safe
+		const dbOperations = dbOps as any;
+
 		// Create handlers
 		const healthHandler = createHealthHandler(db, config);
-		const statsHandler = createStatsHandler(dbOps);
-		const statsResetHandler = createStatsResetHandler(dbOps);
-		const accountsHandler = createAccountsListHandler(dbOps);
-		const accountAddHandler = createAccountAddHandler(dbOps, config);
-		const _accountRemoveHandler = createAccountRemoveHandler(dbOps);
-		const _accountTierHandler = createAccountTierUpdateHandler(dbOps);
-		const requestsSummaryHandler = createRequestsSummaryHandler(dbOps);
-		const requestsDetailHandler = createRequestsDetailHandler(dbOps);
+		const databaseHealthHandler = createDatabaseHealthHandler(dbOperations);
+		const statsHandler = createStatsHandler(dbOperations);
+		const statsResetHandler = createStatsResetHandler(dbOperations);
+		const accountsHandler = createAccountsListHandler(dbOperations);
+		const accountAddHandler = createAccountAddHandler(dbOperations, config);
+		const _accountRemoveHandler = createAccountRemoveHandler(dbOperations);
+		const _accountTierHandler = createAccountTierUpdateHandler(dbOperations);
+		const requestsSummaryHandler = createRequestsSummaryHandler(dbOperations);
+		const requestsDetailHandler = createRequestsDetailHandler(dbOperations);
 		const configHandlers = createConfigHandlers(config);
 		const logsStreamHandler = createLogsStreamHandler();
 		const logsHistoryHandler = createLogsHistoryHandler();
 		const analyticsHandler = createAnalyticsHandler(this.context);
-		const oauthInitHandler = createOAuthInitHandler(dbOps);
-		const oauthCallbackHandler = createOAuthCallbackHandler(dbOps);
-		const agentsHandler = createAgentsListHandler(dbOps);
+		const oauthInitHandler = createOAuthInitHandler(dbOperations);
+		const oauthCallbackHandler = createOAuthCallbackHandler(dbOperations);
+		const agentsHandler = createAgentsListHandler(dbOperations);
 		const workspacesHandler = createWorkspacesListHandler();
 		const requestsStreamHandler = createRequestsStreamHandler();
 
 		// Register routes
 		this.handlers.set("GET:/health", () => healthHandler());
+		this.handlers.set("GET:/api/health/database", () => databaseHealthHandler());
 		this.handlers.set("GET:/api/stats", () => statsHandler());
 		this.handlers.set("POST:/api/stats/reset", () => statsResetHandler());
 		this.handlers.set("GET:/api/accounts", async () => await accountsHandler());
@@ -130,7 +136,7 @@ export class APIRouter {
 		this.handlers.set("GET:/api/agents", () => agentsHandler());
 		this.handlers.set("POST:/api/agents/bulk-preference", (req) => {
 			const bulkHandler = createBulkAgentPreferenceUpdateHandler(
-				this.context.dbOps,
+				dbOperations,
 			);
 			return bulkHandler(req);
 		});
@@ -170,7 +176,7 @@ export class APIRouter {
 		if (path.startsWith("/api/requests/payload/") && method === "GET") {
 			const parts = path.split("/");
 			const requestId = parts[4]; // /api/requests/payload/{id}
-			const requestPayloadHandler = createRequestPayloadHandler(this.context.dbOps);
+			const requestPayloadHandler = createRequestPayloadHandler(this.context.dbOps as any);
 			return await this.wrapHandler(() => requestPayloadHandler(requestId))(req, url);
 		}
 
@@ -233,7 +239,7 @@ export class APIRouter {
 			// Agent preference update
 			if (path.endsWith("/preference") && method === "POST") {
 				const preferenceHandler = createAgentPreferenceUpdateHandler(
-					this.context.dbOps,
+					this.context.dbOps as any,
 				);
 				return await this.wrapHandler((req) => preferenceHandler(req, agentId))(
 					req,

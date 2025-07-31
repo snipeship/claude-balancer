@@ -420,6 +420,14 @@ export class DrizzleDatabaseOperations implements StrategyStore, Disposable {
 	}
 
 	/**
+	 * Get request payload by ID - sync compatibility method
+	 */
+	getRequestPayload(requestId: string): unknown | null {
+		log.warn(`getRequestPayload (sync) called for ${requestId} - this should be updated to use getRequestPayloadAsync()`);
+		return null;
+	}
+
+	/**
 	 * List request payloads with account names - async version using DrizzleORM
 	 */
 	async listRequestPayloadsWithAccountNamesAsync(limit = 50): Promise<Array<{ id: string; json: string; account_name: string | null }>> {

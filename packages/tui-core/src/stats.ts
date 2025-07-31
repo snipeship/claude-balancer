@@ -97,5 +97,5 @@ export async function clearHistory(): Promise<void> {
 export async function analyzePerformance(): Promise<void> {
 	const dbOps = DatabaseFactory.getInstance();
 	const db = dbOps.getDatabase();
-	cliCommands.analyzePerformance(db);
+	await cliCommands.analyzePerformance(db);
 }

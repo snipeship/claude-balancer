@@ -1,64 +1,108 @@
 import type { Database } from "bun:sqlite";
 import { TIME_CONSTANTS } from "@ccflare/core";
-import { analyzeIndexUsage } from "@ccflare/database";
+import { analyzeIndexUsage, DatabaseFactory } from "@ccflare/database";
 
 /**
  * Analyze query performance and index usage
  */
-export function analyzePerformance(db: Database): void {
+export async function analyzePerformance(db: Database): Promise<void> {
 	console.log("\n=== Database Performance Analysis ===\n");
 
 	// Basic index usage analysis
 	analyzeIndexUsage(db);
 
-	// Show detailed query performance for common patterns
+	// Show detailed query performance for common patterns using repository methods
 	console.log("\n=== Query Performance Metrics ===\n");
 
-	const performanceQueries = [
-		{
-			name: "Recent requests (last 24h)",
-			query: `
-				SELECT COUNT(*) as count 
-				FROM requests 
-				WHERE timestamp > ?
-			`,
-			params: [Date.now() - TIME_CONSTANTS.DAY],
-		},
-		{
-			name: "Active accounts",
-			query: `
-				SELECT COUNT(*) as count 
-				FROM accounts 
-				WHERE paused = 0
-			`,
-			params: [],
-		},
-		{
-			name: "Model usage distribution",
-			query: `
-				SELECT model, COUNT(*) as count 
-				FROM requests 
-				WHERE model IS NOT NULL AND timestamp > ? 
-				GROUP BY model 
-				ORDER BY count DESC 
-				LIMIT 5
-			`,
-			params: [Date.now() - TIME_CONSTANTS.DAY],
-		},
-	];
+	try {
+		const dbOps = DatabaseFactory.getInstance();
 
-	for (const test of performanceQueries) {
-		try {
-			const start = performance.now();
-			const stmt = db.prepare(test.query);
-			const result = stmt.all(...test.params);
-			const duration = performance.now() - start;
+		// Test repository-based queries
+		const repositoryTests = [
+			{
+				name: "Active accounts (via repository)",
+				test: async () => {
+					const start = performance.now();
+					const accounts = dbOps.getAllAccounts();
+					const activeCount = accounts.filter(acc => !acc.paused).length;
+					const duration = performance.now() - start;
+					return { duration, result: { count: activeCount } };
+				}
+			},
+			{
+				name: "Recent requests stats (via repository)",
+				test: async () => {
+					const start = performance.now();
+					const stats = dbOps.getStatsRepository();
+					const aggregated = await stats.getAggregatedStats();
+					const duration = performance.now() - start;
+					return { duration, result: { totalRequests: aggregated.totalRequests } };
+				}
+			}
+		];
 
-			console.log(`${test.name}:`);
-			console.log(`  Time: ${duration.toFixed(2)}ms`);
-			console.log(`  Results: ${JSON.stringify(result)}\n`);
-		} catch (error) {
-			console.error(`${test.name}: Error - ${error}`);
+		// Run repository tests
+		for (const test of repositoryTests) {
+			try {
+				const { duration, result } = await test.test();
+				console.log(`${test.name}:`);
+				console.log(`  Time: ${duration.toFixed(2)}ms`);
+				console.log(`  Results: ${JSON.stringify(result)}\n`);
+			} catch (error) {
+				console.error(`${test.name}: Error - ${error}`);
+			}
+		}
+
+	} catch (error) {
+		console.warn("Repository-based tests failed, falling back to raw SQL:", error);
+
+		// Fallback to raw SQL queries for SQLite-specific analysis
+		const performanceQueries = [
+			{
+				name: "Recent requests (last 24h)",
+				query: `
+					SELECT COUNT(*) as count
+					FROM requests
+					WHERE timestamp > ?
+				`,
+				params: [Date.now() - TIME_CONSTANTS.DAY],
+			},
+			{
+				name: "Active accounts",
+				query: `
+					SELECT COUNT(*) as count
+					FROM accounts
+					WHERE paused = 0
+				`,
+				params: [],
+			},
+			{
+				name: "Model usage distribution",
+				query: `
+					SELECT model, COUNT(*) as count
+					FROM requests
+					WHERE model IS NOT NULL AND timestamp > ?
+					GROUP BY model
+					ORDER BY count DESC
+					LIMIT 5
+				`,
+				params: [Date.now() - TIME_CONSTANTS.DAY],
+			},
+		];
+
+		for (const test of performanceQueries) {
+			try {
+				const start = performance.now();
+				const stmt = db.prepare(test.query);
+				const result = stmt.all(...test.params);
+				const duration = performance.now() - start;
+
+				console.log(`${test.name}:`);
+				console.log(`  Time: ${duration.toFixed(2)}ms`);
+				console.log(`  Results: ${JSON.stringify(result)}\n`);
+			} catch (error) {
+				console.error(`${test.name}: Error - ${error}`);
+			}
 		}
 	}
 

@@ -196,6 +196,25 @@ export class DrizzleStatsRepository extends DrizzleBaseRepository<any> {
 	}
 
 	/**
+	 * Clear all request data and reset account statistics
+	 */
+	async clearAll(): Promise<void> {
+		const requestsTable = this.getRequestsTable();
+		const accountsTable = this.getAccountsTable();
+
+		// Clear all requests
+		await (this.db as any).delete(requestsTable);
+
+		// Reset account statistics
+		await (this.db as any)
+			.update(accountsTable)
+			.set({
+				requestCount: 0,
+				sessionRequestCount: 0
+			});
+	}
+
+	/**
 	 * Get the appropriate requests table for the current provider
 	 */
 	private getRequestsTable() {

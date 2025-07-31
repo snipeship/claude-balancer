@@ -65,7 +65,7 @@ export async function runCli(argv: string[]): Promise<void> {
 			}
 
 			case "list": {
-				const accounts = getAccountsList(dbOps);
+				const accounts = await getAccountsList(dbOps);
 
 				if (accounts.length === 0) {
 					console.log("No accounts found");
@@ -169,7 +169,7 @@ export async function runCli(argv: string[]): Promise<void> {
 
 			case "analyze": {
 				const db = dbOps.getDatabase();
-				analyzePerformance(db);
+				await analyzePerformance(db);
 				break;
 			}
 

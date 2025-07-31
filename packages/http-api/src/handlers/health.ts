@@ -6,21 +6,34 @@ import type { HealthResponse, DatabaseHealthResponse } from "../types";
 
 /**
  * Create a health check handler (legacy - works with SQLite Database)
+ * @deprecated Use createDatabaseHealthHandler instead for better database provider support
  */
 export function createHealthHandler(db: Database, config: Config) {
 	return (): Response => {
-		const accountCount = db
-			.query("SELECT COUNT(*) as count FROM accounts")
-			.get() as { count: number } | undefined;
+		try {
+			// Use a simple query to test database connectivity
+			const accountCount = db
+				.query("SELECT COUNT(*) as count FROM accounts")
+				.get() as { count: number } | undefined;
 
-		const response: HealthResponse = {
-			status: "ok",
-			accounts: accountCount?.count || 0,
-			timestamp: new Date().toISOString(),
-			strategy: config.getStrategy(),
-		};
+			const response: HealthResponse = {
+				status: "ok",
+				accounts: accountCount?.count || 0,
+				timestamp: new Date().toISOString(),
+				strategy: config.getStrategy(),
+			};
 
-		return jsonResponse(response);
+			return jsonResponse(response);
+		} catch (error) {
+			const response: HealthResponse = {
+				status: "error",
+				accounts: 0,
+				timestamp: new Date().toISOString(),
+				strategy: config.getStrategy(),
+			};
+
+			return jsonResponse(response, 503);
+		}
 	};
 }
 
