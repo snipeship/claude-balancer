@@ -1,0 +1,97 @@
+# Example Kubernetes deployment for ccflare with MySQL
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ccflare-db-secret
+  namespace: coder
+type: Opaque
+stringData:
+  database-url: "mysql://ccflare_user:your_password@mysql-service:3306/ccflare_db"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ccflare-secret
+  namespace: coder
+type: Opaque
+stringData:
+  api-key: "your-secure-api-key-here"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ccflare
+  namespace: coder
+  labels:
+    app: ccflare
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ccflare
+  template:
+    metadata:
+      labels:
+        app: ccflare
+    spec:
+      securityContext:
+        runAsUser: 1001
+        runAsGroup: 1001
+        fsGroup: 1001
+      containers:
+      - name: ccflare
+        image: 192.168.96.61:30009/library/ccflare-fork:latest
+        ports:
+        - containerPort: 8080
+        env:
+        # Database configuration for MySQL
+        - name: DATABASE_PROVIDER
+          value: "mysql"
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: ccflare-db-secret
+              key: database-url
+        # Additional configuration
+        - name: API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: ccflare-secret
+              key: api-key
+        # Optional: Override other settings
+        - name: LOG_LEVEL
+          value: "INFO"
+        - name: PORT
+          value: "8080"
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ccflare-service
+  namespace: coder
+spec:
+  selector:
+    app: ccflare
+  ports:
+  - port: 8080
+    targetPort: 8080
+  type: ClusterIP

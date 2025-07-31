@@ -4,7 +4,12 @@ import { addPerformanceIndexes } from "./performance-indexes";
 
 const log = new Logger("DatabaseMigrations");
 
+/**
+ * @deprecated This migration system is deprecated. Use DrizzleDatabaseOperations instead.
+ * This function is kept for backward compatibility only.
+ */
 export function ensureSchema(db: Database): void {
+	log.warn("DEPRECATED: ensureSchema() is deprecated. Use DrizzleDatabaseOperations for new projects.");
 	// Create accounts table
 	db.run(`
 		CREATE TABLE IF NOT EXISTS accounts (
@@ -102,7 +107,13 @@ export function ensureSchema(db: Database): void {
 	`);
 }
 
+/**
+ * @deprecated This migration system is deprecated. Use DrizzleDatabaseOperations instead.
+ * This function is kept for backward compatibility only.
+ */
 export function runMigrations(db: Database): void {
+	log.warn("DEPRECATED: runMigrations() is deprecated. Use DrizzleDatabaseOperations for new projects.");
+
 	// Ensure base schema exists first
 	ensureSchema(db);
 	// Check if columns exist before adding them

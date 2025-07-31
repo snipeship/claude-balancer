@@ -16,12 +16,16 @@ import { resolveConfigPath } from "./paths";
 
 const log = new Logger("Config");
 
+export type DatabaseProvider = 'sqlite' | 'postgresql' | 'mysql';
+
 export interface RuntimeConfig {
 	clientId: string;
 	retry: { attempts: number; delayMs: number; backoff: number };
 	sessionDurationMs: number;
 	port: number;
 	database?: {
+		provider?: DatabaseProvider;
+		url?: string;
 		walMode?: boolean;
 		busyTimeoutMs?: number;
 		cacheSize?: number;
@@ -45,6 +49,8 @@ export interface ConfigData {
 	session_duration_ms?: number;
 	port?: number;
 	// Database configuration
+	db_provider?: DatabaseProvider;
+	db_url?: string;
 	db_wal_mode?: boolean;
 	db_busy_timeout_ms?: number;
 	db_cache_size?: number;
@@ -251,6 +257,7 @@ export class Config extends EventEmitter {
 			sessionDurationMs: TIME_CONSTANTS.SESSION_DURATION_DEFAULT,
 			port: NETWORK.DEFAULT_PORT,
 			database: {
+				provider: 'sqlite' as DatabaseProvider,
 				walMode: true,
 				busyTimeoutMs: 5000,
 				cacheSize: -20000, // 20MB cache
@@ -285,6 +292,24 @@ export class Config extends EventEmitter {
 			defaults.port = parseInt(process.env.PORT);
 		}
 
+		// Database environment variable overrides with validation
+		if (process.env.DATABASE_PROVIDER) {
+			const provider = process.env.DATABASE_PROVIDER.toLowerCase() as DatabaseProvider;
+			if (['sqlite', 'postgresql', 'mysql'].includes(provider)) {
+				defaults.database!.provider = provider;
+			} else {
+				console.warn(`Invalid DATABASE_PROVIDER environment variable: ${process.env.DATABASE_PROVIDER}. Using default.`);
+			}
+		}
+		if (process.env.DATABASE_URL) {
+			try {
+				new URL(process.env.DATABASE_URL);
+				defaults.database!.url = process.env.DATABASE_URL;
+			} catch {
+				console.warn(`Invalid DATABASE_URL environment variable: ${process.env.DATABASE_URL}. Using default.`);
+			}
+		}
+
 		// Override with config file settings if present
 		if (this.data.client_id) {
 			defaults.clientId = this.data.client_id;
@@ -305,10 +330,29 @@ export class Config extends EventEmitter {
 			defaults.port = this.data.port;
 		}
 
+		// Database provider and URL from config file with validation
+		if (this.data.db_provider) {
+			const provider = this.data.db_provider.toLowerCase() as DatabaseProvider;
+			if (['sqlite', 'postgresql', 'mysql'].includes(provider)) {
+				defaults.database!.provider = provider;
+			} else {
+				console.warn(`Invalid database provider in config file: ${this.data.db_provider}. Using default.`);
+			}
+		}
+		if (this.data.db_url) {
+			try {
+				new URL(this.data.db_url);
+				defaults.database!.url = this.data.db_url;
+			} catch {
+				console.warn(`Invalid database URL in config file: ${this.data.db_url}. Using default.`);
+			}
+		}
+
 		// Database configuration overrides
 		// Ensure database configuration object exists
 		if (!defaults.database) {
 			defaults.database = {
+				provider: 'sqlite' as DatabaseProvider,
 				walMode: true,
 				busyTimeoutMs: 5000,
 				cacheSize: -20000,

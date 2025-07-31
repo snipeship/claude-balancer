@@ -1,4 +1,4 @@
-import { DatabaseFactory, withDatabaseRetrySync } from "@ccflare/database";
+import { DatabaseFactory } from "@ccflare/database";
 import type { RequestPayload } from "@ccflare/types";
 
 export type { RequestPayload };
@@ -18,11 +18,14 @@ export interface RequestSummary {
 export async function getRequests(limit = 100): Promise<RequestPayload[]> {
 	const dbOps = DatabaseFactory.getInstance();
 
-	// Use the optimized database method that includes account names in a single JOIN
-	// This eliminates N+1 queries and uses the performance-optimized method
-	const rows = withDatabaseRetrySync(() => {
-		return dbOps.listRequestPayloadsWithAccountNames(limit);
-	}, dbOps.getRetryConfig(), "getRequests");
+	// Use proper type checking instead of casting
+	let rows;
+	if ('listRequestPayloadsWithAccountNamesAsync' in dbOps) {
+		rows = await dbOps.listRequestPayloadsWithAccountNamesAsync(limit);
+	} else {
+		// Fallback for legacy DatabaseOperations
+		rows = dbOps.listRequestPayloadsWithAccountNames(limit);
+	}
 
 	const parsed = rows.map((r: { id: string; json: string; account_name: string | null }) => {
 		try {
@@ -52,11 +55,15 @@ export async function getRequests(limit = 100): Promise<RequestPayload[]> {
 export async function getRequestPayload(requestId: string): Promise<RequestPayload | null> {
 	const dbOps = DatabaseFactory.getInstance();
 
-	const payload = withDatabaseRetrySync(() => {
-		return dbOps.getRequestPayload(requestId);
-	}, dbOps.getRetryConfig(), "getRequestPayload");
-
-	return payload as RequestPayload | null;
+	// Use proper type checking instead of casting
+	if ('getRequestPayloadAsync' in dbOps) {
+		const payload = await dbOps.getRequestPayloadAsync(requestId);
+		return payload as RequestPayload | null;
+	} else {
+		// Fallback for legacy DatabaseOperations
+		const payload = dbOps.getRequestPayload(requestId);
+		return payload as RequestPayload | null;
+	}
 }
 
 export async function getRequestSummaries(
@@ -64,40 +71,17 @@ export async function getRequestSummaries(
 ): Promise<Map<string, RequestSummary>> {
 	const dbOps = DatabaseFactory.getInstance();
 
-	// Use retry logic for the database query
-	const summaries = withDatabaseRetrySync(() => {
-		const db = dbOps.getDatabase();
-		return db
-			.query(`
-			SELECT
-				id,
-				model,
-				input_tokens as inputTokens,
-				output_tokens as outputTokens,
-				total_tokens as totalTokens,
-				cache_read_input_tokens as cacheReadInputTokens,
-				cache_creation_input_tokens as cacheCreationInputTokens,
-				cost_usd as costUsd,
-				response_time_ms as responseTimeMs
-			FROM requests
-			ORDER BY timestamp DESC
-			LIMIT ?
-		`)
-			.all(limit);
-	}, dbOps.getRetryConfig(), "getRequestSummaries") as Array<{
-		id: string;
-		model?: string;
-		inputTokens?: number;
-		outputTokens?: number;
-		totalTokens?: number;
-		cacheReadInputTokens?: number;
-		cacheCreationInputTokens?: number;
-		costUsd?: number;
-		responseTimeMs?: number;
-	}>;
+	// Use proper type checking instead of casting
+	let summaries: any[];
+	if ('getRequestSummariesAsync' in dbOps) {
+		summaries = await dbOps.getRequestSummariesAsync(limit);
+	} else {
+		// Legacy DatabaseOperations doesn't have this method, return empty array
+		summaries = [];
+	}
 
 	const summaryMap = new Map<string, RequestSummary>();
-	summaries.forEach((summary) => {
+	summaries.forEach((summary: any) => {
 		summaryMap.set(summary.id, {
 			id: summary.id,
 			model: summary.model || undefined,

@@ -53,11 +53,11 @@ export class APIRouter {
 		const healthHandler = createHealthHandler(db, config);
 		const statsHandler = createStatsHandler(dbOps);
 		const statsResetHandler = createStatsResetHandler(dbOps);
-		const accountsHandler = createAccountsListHandler(db);
+		const accountsHandler = createAccountsListHandler(dbOps);
 		const accountAddHandler = createAccountAddHandler(dbOps, config);
 		const _accountRemoveHandler = createAccountRemoveHandler(dbOps);
 		const _accountTierHandler = createAccountTierUpdateHandler(dbOps);
-		const requestsSummaryHandler = createRequestsSummaryHandler(db);
+		const requestsSummaryHandler = createRequestsSummaryHandler(dbOps);
 		const requestsDetailHandler = createRequestsDetailHandler(dbOps);
 		const configHandlers = createConfigHandlers(config);
 		const logsStreamHandler = createLogsStreamHandler();
@@ -72,7 +72,7 @@ export class APIRouter {
 		this.handlers.set("GET:/health", () => healthHandler());
 		this.handlers.set("GET:/api/stats", () => statsHandler());
 		this.handlers.set("POST:/api/stats/reset", () => statsResetHandler());
-		this.handlers.set("GET:/api/accounts", () => accountsHandler());
+		this.handlers.set("GET:/api/accounts", async () => await accountsHandler());
 		this.handlers.set("POST:/api/accounts", (req) => accountAddHandler(req));
 		this.handlers.set("POST:/api/oauth/init", (req) => oauthInitHandler(req));
 		this.handlers.set("POST:/api/oauth/callback", (req) =>

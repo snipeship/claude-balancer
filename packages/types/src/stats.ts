@@ -101,6 +101,17 @@ export interface HealthResponse {
 	strategy: string;
 }
 
+// Database health check response
+export interface DatabaseHealthResponse {
+	status: "healthy" | "unhealthy";
+	provider: "sqlite" | "postgresql" | "mysql" | "unknown";
+	connectionStatus: boolean;
+	tablesCount: number;
+	accounts: number;
+	timestamp: string;
+	error?: string;
+}
+
 // Config types
 export interface ConfigResponse {
 	lb_strategy: string;

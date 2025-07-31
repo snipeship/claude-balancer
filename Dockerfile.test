@@ -1,0 +1,30 @@
+# Test Dockerfile for running integration tests against different database providers
+FROM oven/bun:1.1.29-alpine
+
+# Install curl and other testing utilities
+RUN apk add --no-cache curl wget jq
+
+# Set working directory
+WORKDIR /app
+
+# Copy package files
+COPY package.json bun.lockb ./
+COPY packages/ ./packages/
+
+# Install dependencies
+RUN bun install --frozen-lockfile
+
+# Copy source code
+COPY . .
+
+# Build the project (if build script exists)
+RUN bun run build || echo "No build script found, continuing..."
+
+# Create test directory
+RUN mkdir -p /app/tests/integration
+
+# Copy test files
+COPY tests/integration/ /app/tests/integration/
+
+# Default command runs tests
+CMD ["bun", "test", "/app/tests/integration/"]

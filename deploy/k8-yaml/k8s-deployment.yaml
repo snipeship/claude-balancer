@@ -37,6 +37,26 @@ spec:
         image: 192.168.96.61:30009/library/ccflare-fork:latest
         ports:
         - containerPort: 8080
+        env:
+        # Database configuration
+        - name: DATABASE_PROVIDER
+          value: "sqlite"  # Change to "postgresql" or "mysql" for external databases
+        # For SQLite (default)
+        - name: ccflare_DB_PATH
+          value: "/app/data/ccflare.db"
+        # For PostgreSQL/MySQL, uncomment and configure:
+        # - name: DATABASE_URL
+        #   valueFrom:
+        #     secretKeyRef:
+        #       name: ccflare-db-secret
+        #       key: database-url
+        # Additional configuration
+        - name: API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: ccflare-secret
+              key: api-key
+              optional: true
         volumeMounts:
         - name: ccflare-data
           mountPath: /app/data

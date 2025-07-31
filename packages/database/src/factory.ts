@@ -1,8 +1,10 @@
 import { registerDisposable, unregisterDisposable } from "@ccflare/core";
-import type { RuntimeConfig } from "@ccflare/config";
-import { DatabaseOperations, type DatabaseConfig, type DatabaseRetryConfig } from "./database-operations";
+import type { RuntimeConfig, DatabaseProvider } from "@ccflare/config";
+import { DatabaseOperations } from "./database-operations";
+import { DrizzleDatabaseOperations } from "./drizzle-database-operations";
+import { resolveDbPath } from "./paths";
 
-let instance: DatabaseOperations | null = null;
+let instance: DatabaseOperations | DrizzleDatabaseOperations | null = null;
 let dbPath: string | undefined;
 let runtimeConfig: RuntimeConfig | undefined;
 
@@ -14,23 +16,30 @@ export function initialize(
 	runtimeConfig = runtimeConfigParam;
 }
 
-export function getInstance(): DatabaseOperations {
+export function getInstance(): DatabaseOperations | DrizzleDatabaseOperations {
 	if (!instance) {
-		// Extract database configuration from runtime config
-		const dbConfig: DatabaseConfig | undefined = runtimeConfig?.database ? {
-			...(runtimeConfig.database.walMode !== undefined && { walMode: runtimeConfig.database.walMode }),
-			...(runtimeConfig.database.busyTimeoutMs !== undefined && { busyTimeoutMs: runtimeConfig.database.busyTimeoutMs }),
-			...(runtimeConfig.database.cacheSize !== undefined && { cacheSize: runtimeConfig.database.cacheSize }),
-			...(runtimeConfig.database.synchronous !== undefined && { synchronous: runtimeConfig.database.synchronous }),
-			...(runtimeConfig.database.mmapSize !== undefined && { mmapSize: runtimeConfig.database.mmapSize }),
-		} : undefined;
+		// Check environment variables first
+		const envProvider = process.env.DATABASE_PROVIDER;
+		const envUrl = process.env.DATABASE_URL;
 
-		const retryConfig: DatabaseRetryConfig | undefined = runtimeConfig?.database?.retry;
+		// Determine provider from environment or config
+		const provider = envProvider || runtimeConfig?.database?.provider || 'sqlite';
 
-		instance = new DatabaseOperations(dbPath, dbConfig, retryConfig);
-		if (runtimeConfig) {
-			instance.setRuntimeConfig(runtimeConfig);
-		}
+		// Always use DrizzleDatabaseOperations for consistency
+		// Build configuration for DrizzleDatabaseOperations
+		const dbConfig = {
+			provider: provider as DatabaseProvider,
+			url: envUrl || runtimeConfig?.database?.url,
+			dbPath: !envUrl && provider === 'sqlite' ? (dbPath || resolveDbPath()) : undefined,
+			walMode: runtimeConfig?.database?.walMode,
+			busyTimeoutMs: runtimeConfig?.database?.busyTimeoutMs,
+			cacheSize: runtimeConfig?.database?.cacheSize,
+			synchronous: runtimeConfig?.database?.synchronous,
+			mmapSize: runtimeConfig?.database?.mmapSize,
+		};
+
+		instance = new DrizzleDatabaseOperations(dbConfig, runtimeConfig);
+
 		// Register with lifecycle manager
 		registerDisposable(instance);
 	}
@@ -44,6 +53,8 @@ export function closeAll(): void {
 		instance = null;
 	}
 }
+
+
 
 export function reset(): void {
 	closeAll();

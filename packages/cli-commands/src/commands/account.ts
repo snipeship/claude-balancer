@@ -2,6 +2,9 @@ import type { Config } from "@ccflare/config";
 import type { DatabaseOperations } from "@ccflare/database";
 import { createOAuthFlow } from "@ccflare/oauth-flow";
 import type { AccountListItem } from "@ccflare/types";
+
+// Type alias for database operations that supports both legacy and Drizzle
+type DatabaseOps = DatabaseOperations | any;
 import {
 	type PromptAdapter,
 	promptAccountRemovalConfirmation,
@@ -29,7 +32,7 @@ export interface AccountListItemWithMode extends AccountListItem {
  * Add a new account using OAuth flow
  */
 export async function addAccount(
-	dbOps: DatabaseOperations,
+	dbOps: DatabaseOperations | any,
 	config: Config,
 	options: AddAccountOptions,
 ): Promise<void> {
@@ -97,11 +100,14 @@ export async function addAccount(
 /**
  * Get list of all accounts with formatted information
  */
-export function getAccountsList(dbOps: DatabaseOperations): AccountListItem[] {
-	const accounts = dbOps.getAllAccounts();
+export async function getAccountsList(dbOps: DatabaseOperations | any): Promise<AccountListItem[]> {
+	// Use async method if available (DrizzleDatabaseOperations)
+	const accounts = 'getAllAccountsAsync' in dbOps
+		? await dbOps.getAllAccountsAsync()
+		: dbOps.getAllAccounts();
 	const now = Date.now();
 
-	return accounts.map((account) => {
+	return accounts.map((account: any) => {
 		const tierDisplay = `${account.account_tier}x`;
 		const tokenStatus =
 			account.expires_at && account.expires_at > now ? "valid" : "expired";
@@ -142,37 +148,58 @@ export function getAccountsList(dbOps: DatabaseOperations): AccountListItem[] {
 /**
  * Remove an account by name
  */
-export function removeAccount(
-	dbOps: DatabaseOperations,
+export async function removeAccount(
+	dbOps: DatabaseOperations | any,
 	name: string,
-): { success: boolean; message: string } {
-	const db = dbOps.getDatabase();
-	const result = db.run("DELETE FROM accounts WHERE name = ?", [name]);
+): Promise<{ success: boolean; message: string }> {
+	try {
+		// Use repository method if available (DrizzleDatabaseOperations)
+		if ('removeAccountByNameAsync' in dbOps) {
+			const success = await dbOps.removeAccountByNameAsync(name);
+			return {
+				success,
+				message: success
+					? `Account '${name}' removed successfully`
+					: `Account '${name}' not found`,
+			};
+		} else {
+			// Fallback to raw SQL for legacy DatabaseOperations
+			const db = dbOps.getDatabase();
+			const result = db.run("DELETE FROM accounts WHERE name = ?", [name]);
 
-	if (result.changes === 0) {
+			if (result.changes === 0) {
+				return {
+					success: false,
+					message: `Account '${name}' not found`,
+				};
+			}
+
+			return {
+				success: true,
+				message: `Account '${name}' removed successfully`,
+			};
+		}
+	} catch (error) {
 		return {
 			success: false,
-			message: `Account '${name}' not found`,
+			message: `Error removing account: ${error instanceof Error ? error.message : 'Unknown error'}`,
 		};
 	}
-
-	return {
-		success: true,
-		message: `Account '${name}' removed successfully`,
-	};
 }
 
 /**
  * Remove an account by name with confirmation prompt (for CLI)
  */
 export async function removeAccountWithConfirmation(
-	dbOps: DatabaseOperations,
+	dbOps: DatabaseOperations | any,
 	name: string,
 	force?: boolean,
 ): Promise<{ success: boolean; message: string }> {
 	// Check if account exists first
-	const accounts = dbOps.getAllAccounts();
-	const exists = accounts.some((a) => a.name === name);
+	const accounts = 'getAllAccountsAsync' in dbOps
+		? await dbOps.getAllAccountsAsync()
+		: dbOps.getAllAccounts();
+	const exists = accounts.some((a: any) => a.name === name);
 
 	if (!exists) {
 		return {
@@ -192,14 +219,14 @@ export async function removeAccountWithConfirmation(
 		}
 	}
 
-	return removeAccount(dbOps, name);
+	return await removeAccount(dbOps, name);
 }
 
 /**
  * Toggle account pause state (shared logic for pause/resume)
  */
 function toggleAccountPause(
-	dbOps: DatabaseOperations,
+	dbOps: DatabaseOperations | any,
 	name: string,
 	shouldPause: boolean,
 ): { success: boolean; message: string } {
@@ -246,7 +273,7 @@ function toggleAccountPause(
  * Pause an account by name
  */
 export function pauseAccount(
-	dbOps: DatabaseOperations,
+	dbOps: DatabaseOperations | any,
 	name: string,
 ): { success: boolean; message: string } {
 	return toggleAccountPause(dbOps, name, true);
@@ -256,7 +283,7 @@ export function pauseAccount(
  * Resume a paused account by name
  */
 export function resumeAccount(
-	dbOps: DatabaseOperations,
+	dbOps: DatabaseOperations | any,
 	name: string,
 ): { success: boolean; message: string } {
 	return toggleAccountPause(dbOps, name, false);

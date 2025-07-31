@@ -5,6 +5,7 @@ export type {
 	AnalyticsResponse,
 	APIContext,
 	ConfigResponse,
+	DatabaseHealthResponse,
 	HealthResponse,
 	ModelPerformance,
 	RequestResponse,
