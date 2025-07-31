@@ -18,7 +18,12 @@ export type LogEntry = LogEvent;
 export type RequestSummary = RequestResponse;
 
 // Re-export types directly
-export type { Agent, AgentWorkspace, RequestPayload } from "@ccflare/types";
+export type {
+	Agent,
+	AgentWorkspace,
+	RequestPayload,
+	RequestResponse,
+} from "@ccflare/types";
 
 // Agent response interface
 export interface AgentsResponse {
@@ -186,6 +191,25 @@ class API extends HttpClient {
 		}
 	}
 
+	async renameAccount(
+		accountId: string,
+		newName: string,
+	): Promise<{ newName: string }> {
+		try {
+			const response = await this.post<{
+				success: boolean;
+				message: string;
+				newName: string;
+			}>(`/api/accounts/${accountId}/rename`, { name: newName });
+			return { newName: response.newName };
+		} catch (error) {
+			if (error instanceof HttpError) {
+				throw new Error(error.message);
+			}
+			throw error;
+		}
+	}
+
 	async getStrategy(): Promise<string> {
 		const data = await this.get<{ strategy: string }>("/api/config/strategy");
 		return data.strategy;
@@ -213,6 +237,40 @@ class API extends HttpClient {
 	async updateAgentPreference(agentId: string, model: string): Promise<void> {
 		try {
 			await this.post(`/api/agents/${agentId}/preference`, { model });
+		} catch (error) {
+			if (error instanceof HttpError) {
+				throw new Error(error.message);
+			}
+			throw error;
+		}
+	}
+
+	async getDefaultAgentModel(): Promise<string> {
+		const data = await this.get<{ model: string }>("/api/config/model");
+		return data.model;
+	}
+
+	async setDefaultAgentModel(model: string): Promise<void> {
+		try {
+			await this.post("/api/config/model", { model });
+		} catch (error) {
+			if (error instanceof HttpError) {
+				throw new Error(error.message);
+			}
+			throw error;
+		}
+	}
+
+	async setBulkAgentPreferences(
+		model: string,
+	): Promise<{ updatedCount: number }> {
+		try {
+			const response = await this.post<{
+				success: boolean;
+				updatedCount: number;
+				model: string;
+			}>("/api/agents/bulk-preference", { model });
+			return { updatedCount: response.updatedCount };
 		} catch (error) {
 			if (error instanceof HttpError) {
 				throw new Error(error.message);

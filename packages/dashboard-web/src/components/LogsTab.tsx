@@ -21,8 +21,14 @@ export function LogsTab() {
 	const startStreaming = useCallback(() => {
 		eventSourceRef.current = api.streamLogs((log: LogEntry) => {
 			setLogs((prev) => [...prev.slice(-999), log]); // Keep last 1000 logs
+			// Auto-scroll to bottom when new log arrives
+			if (autoScroll && logsEndRef.current) {
+				setTimeout(() => {
+					logsEndRef.current?.scrollIntoView({ behavior: "smooth" });
+				}, 0);
+			}
 		});
-	}, []);
+	}, [autoScroll]);
 
 	const stopStreaming = useCallback(() => {
 		if (eventSourceRef.current) {
@@ -37,8 +43,14 @@ export function LogsTab() {
 	useEffect(() => {
 		if (history) {
 			setLogs(history);
+			// Auto-scroll to bottom after loading history
+			if (autoScroll && logsEndRef.current) {
+				setTimeout(() => {
+					logsEndRef.current?.scrollIntoView({ behavior: "smooth" });
+				}, 0);
+			}
 		}
-	}, [history]);
+	}, [history, autoScroll]);
 
 	useEffect(() => {
 		if (!paused && !loading) {

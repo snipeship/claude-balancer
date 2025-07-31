@@ -1,3 +1,4 @@
+import { getModelShortName } from "@ccflare/core";
 import {
 	formatCost,
 	formatNumber,
@@ -20,6 +21,10 @@ import {
 	CHART_PROPS,
 	COLORS,
 } from "../../constants";
+import {
+	formatCompactCurrency,
+	formatCompactNumber,
+} from "../../lib/chart-utils";
 import { ChartContainer } from "./ChartContainer";
 import { getTooltipStyles } from "./chart-utils";
 
@@ -51,7 +56,11 @@ const MODEL_COLORS: Record<string, string> = {
 };
 
 function getModelColor(model: string, index: number): string {
-	// Check for exact match first
+	// Try to find color by short name first
+	const shortName = getModelShortName(model);
+	if (MODEL_COLORS[shortName]) return MODEL_COLORS[shortName];
+
+	// Check for exact match
 	if (MODEL_COLORS[model]) return MODEL_COLORS[model];
 
 	// Check for partial matches
@@ -101,6 +110,25 @@ function formatValue(value: number, metric: string): string {
 			return `${value.toFixed(1)}%`;
 		default:
 			return formatNumber(value);
+	}
+}
+
+function formatAxisValue(value: number, metric: string): string {
+	switch (metric) {
+		case "cost":
+			return formatCompactCurrency(value);
+		case "tokens":
+		case "requests":
+			return formatCompactNumber(value);
+		case "tokensPerSecond":
+			return formatCompactNumber(value);
+		case "responseTime":
+			return formatCompactNumber(value);
+		case "errorRate":
+		case "cacheHitRate":
+			return `${value.toFixed(0)}%`;
+		default:
+			return formatCompactNumber(value);
 	}
 }
 
@@ -176,7 +204,7 @@ export function MultiModelChart({
 				/>
 				<YAxis
 					fontSize={12}
-					tickFormatter={(value) => formatValue(value, metric)}
+					tickFormatter={(value) => formatAxisValue(value, metric)}
 					label={{
 						value: getMetricLabel(metric),
 						angle: -90,

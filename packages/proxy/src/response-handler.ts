@@ -1,3 +1,4 @@
+import { requestEvents } from "@ccflare/core";
 import type { Account } from "@ccflare/types";
 import type { ProxyContext } from "./handlers";
 import type { ChunkMessage, EndMessage, StartMessage } from "./worker-messages";
@@ -80,6 +81,18 @@ export async function forwardToClient(
 		failoverAttempts,
 	};
 	ctx.usageWorker.postMessage(startMessage);
+
+	// Emit request start event for real-time dashboard
+	requestEvents.emit("event", {
+		type: "start",
+		id: requestId,
+		timestamp,
+		method,
+		path,
+		accountId: account?.id || null,
+		statusCode: response.status,
+		agentUsed: agentUsed || null,
+	});
 
 	/*********************************************************************
 	 *  STREAMING RESPONSES — tee with Response.clone() and send chunks

@@ -1,3 +1,4 @@
+import { CLAUDE_MODEL_IDS, DEFAULT_AGENT_MODEL } from "@ccflare/core";
 import {
 	AlertCircle,
 	Bot,
@@ -7,9 +8,16 @@ import {
 	Info,
 	Package,
 	RefreshCw,
+	Settings,
 } from "lucide-react";
 import { useState } from "react";
-import { useAgents, useUpdateAgentPreference } from "../hooks/queries";
+import {
+	useAgents,
+	useBulkUpdateAgentPreferences,
+	useDefaultAgentModel,
+	useSetDefaultAgentModel,
+	useUpdateAgentPreference,
+} from "../hooks/queries";
 import { AgentCard, WorkspaceCard } from "./agents";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
@@ -20,6 +28,22 @@ import {
 	CardHeader,
 	CardTitle,
 } from "./ui/card";
+import {
+	Dialog,
+	DialogContent,
+	DialogDescription,
+	DialogFooter,
+	DialogHeader,
+	DialogTitle,
+	DialogTrigger,
+} from "./ui/dialog";
+import {
+	Select,
+	SelectContent,
+	SelectItem,
+	SelectTrigger,
+	SelectValue,
+} from "./ui/select";
 import { Separator } from "./ui/separator";
 import { Skeleton } from "./ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
@@ -27,12 +51,32 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
 export function AgentsTab() {
 	const { data: response, isLoading, error, refetch } = useAgents();
 	const updatePreference = useUpdateAgentPreference();
+	const { data: defaultModel, isLoading: isLoadingDefaultModel } =
+		useDefaultAgentModel();
+	const setDefaultModel = useSetDefaultAgentModel();
+	const bulkUpdatePreferences = useBulkUpdateAgentPreferences();
 	const [selectedWorkspace, setSelectedWorkspace] = useState<string | null>(
 		null,
 	);
+	const [bulkUpdateDialogOpen, setBulkUpdateDialogOpen] = useState(false);
+	const [bulkUpdateModel, setBulkUpdateModel] =
+		useState<string>(DEFAULT_AGENT_MODEL);
 
 	const handleModelChange = (agentId: string, model: string) => {
 		updatePreference.mutate({ agentId, model });
+	};
+
+	const handleDefaultModelChange = (model: string) => {
+		setDefaultModel.mutate(model);
+	};
+
+	const handleBulkUpdate = () => {
+		bulkUpdatePreferences.mutate(bulkUpdateModel, {
+			onSuccess: (_data) => {
+				setBulkUpdateDialogOpen(false);
+				// You could add a toast notification here
+			},
+		});
 	};
 
 	if (isLoading) {
@@ -116,7 +160,7 @@ export function AgentsTab() {
 name: My Agent
 description: Description of what this agent does
 color: blue
-model: claude-sonnet-4-20250514
+model: ${DEFAULT_AGENT_MODEL}
 ---
 
 Your system prompt content here...`}
@@ -168,6 +212,116 @@ Your system prompt content here...`}
 						</div>
 					</div>
 				</div>
+
+				{/* Default Model Settings */}
+				<Card>
+					<CardHeader>
+						<CardTitle className="text-base flex items-center gap-2">
+							<Settings className="h-4 w-4" />
+							Default Agent Model
+						</CardTitle>
+						<CardDescription>
+							Set the default model for all agents. Individual agent preferences
+							will override this setting.
+						</CardDescription>
+					</CardHeader>
+					<CardContent>
+						<div className="space-y-4">
+							<div className="flex items-center gap-4">
+								<div className="flex-1">
+									<Select
+										value={defaultModel || DEFAULT_AGENT_MODEL}
+										onValueChange={handleDefaultModelChange}
+										disabled={
+											isLoadingDefaultModel || setDefaultModel.isPending
+										}
+									>
+										<SelectTrigger className="w-full max-w-xs">
+											<SelectValue placeholder="Select a model" />
+										</SelectTrigger>
+										<SelectContent>
+											<SelectItem value={CLAUDE_MODEL_IDS.OPUS_4}>
+												Claude Opus 4
+											</SelectItem>
+											<SelectItem value={CLAUDE_MODEL_IDS.SONNET_4}>
+												Claude Sonnet 4
+											</SelectItem>
+										</SelectContent>
+									</Select>
+								</div>
+								{setDefaultModel.isPending && (
+									<span className="text-sm text-muted-foreground">
+										Updating...
+									</span>
+								)}
+							</div>
+
+							<Separator />
+
+							<div className="space-y-2">
+								<p className="text-sm font-medium">Force Update All Agents</p>
+								<p className="text-sm text-muted-foreground">
+									Override all individual agent preferences with a specific
+									model.
+								</p>
+								<Dialog
+									open={bulkUpdateDialogOpen}
+									onOpenChange={setBulkUpdateDialogOpen}
+								>
+									<DialogTrigger asChild>
+										<Button variant="outline" size="sm">
+											Force Update All
+										</Button>
+									</DialogTrigger>
+									<DialogContent>
+										<DialogHeader>
+											<DialogTitle>Update All Agent Models</DialogTitle>
+											<DialogDescription>
+												This will override all individual agent preferences and
+												set them to the selected model. This action cannot be
+												undone.
+											</DialogDescription>
+										</DialogHeader>
+										<div className="py-4">
+											<Select
+												value={bulkUpdateModel}
+												onValueChange={setBulkUpdateModel}
+											>
+												<SelectTrigger>
+													<SelectValue />
+												</SelectTrigger>
+												<SelectContent>
+													<SelectItem value={CLAUDE_MODEL_IDS.OPUS_4}>
+														Claude Opus 4
+													</SelectItem>
+													<SelectItem value={CLAUDE_MODEL_IDS.SONNET_4}>
+														Claude Sonnet 4
+													</SelectItem>
+												</SelectContent>
+											</Select>
+										</div>
+										<DialogFooter>
+											<Button
+												variant="outline"
+												onClick={() => setBulkUpdateDialogOpen(false)}
+											>
+												Cancel
+											</Button>
+											<Button
+												onClick={handleBulkUpdate}
+												disabled={bulkUpdatePreferences.isPending}
+											>
+												{bulkUpdatePreferences.isPending
+													? "Updating..."
+													: `Update ${response?.agents.length || 0} Agents`}
+											</Button>
+										</DialogFooter>
+									</DialogContent>
+								</Dialog>
+							</div>
+						</div>
+					</CardContent>
+				</Card>
 
 				{/* Workspaces Section */}
 				{workspacesWithCounts.length > 0 && (

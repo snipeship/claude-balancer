@@ -250,6 +250,10 @@ export class DatabaseOperations implements StrategyStore, Disposable {
 		this.accounts.resume(accountId);
 	}
 
+	renameAccount(accountId: string, newName: string): void {
+		this.accounts.rename(accountId, newName);
+	}
+
 	resetAccountSession(accountId: string, timestamp: number): void {
 		this.accounts.resetSession(accountId, timestamp);
 	}
@@ -447,6 +451,10 @@ export class DatabaseOperations implements StrategyStore, Disposable {
 
 	deleteAgentPreference(agentId: string): boolean {
 		return this.agentPreferences.deletePreference(agentId);
+	}
+
+	setBulkAgentPreferences(agentIds: string[], model: string): void {
+		this.agentPreferences.setBulkPreferences(agentIds, model);
 	}
 
 	close(): void {

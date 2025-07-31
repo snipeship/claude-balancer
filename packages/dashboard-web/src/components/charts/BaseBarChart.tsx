@@ -45,10 +45,12 @@ export function BaseBarChart({
 	xAxisAngle = 0,
 	xAxisTextAnchor = "middle",
 	xAxisHeight = 30,
+	xAxisTickFormatter,
 	xAxisType = layout === "vertical" ? "number" : "category",
 	yAxisType = layout === "vertical" ? "category" : "number",
 	yAxisWidth,
 	yAxisDomain,
+	yAxisTickFormatter,
 	yAxisOrientation = "left",
 	secondaryYAxis = false,
 	tooltipFormatter,
@@ -90,12 +92,17 @@ export function BaseBarChart({
 					/>
 					{layout === "vertical" ? (
 						<>
-							<XAxis type={xAxisType as "number"} className="text-xs" />
+							<XAxis
+								type={xAxisType as "number"}
+								className="text-xs"
+								tickFormatter={xAxisTickFormatter}
+							/>
 							<YAxis
 								dataKey={xAxisKey}
 								type={yAxisType as "category"}
 								className="text-xs"
 								width={yAxisWidth}
+								tickFormatter={yAxisTickFormatter}
 							/>
 						</>
 					) : (
@@ -107,6 +114,7 @@ export function BaseBarChart({
 								angle={xAxisAngle}
 								textAnchor={xAxisTextAnchor}
 								height={xAxisHeight}
+								tickFormatter={xAxisTickFormatter}
 							/>
 							<YAxis
 								yAxisId={secondaryYAxis ? "left" : undefined}
@@ -114,12 +122,14 @@ export function BaseBarChart({
 								className="text-xs"
 								domain={yAxisDomain}
 								orientation={yAxisOrientation}
+								tickFormatter={yAxisTickFormatter}
 							/>
 							{secondaryYAxis && (
 								<YAxis
 									yAxisId="right"
 									orientation="right"
 									className="text-xs"
+									tickFormatter={yAxisTickFormatter}
 								/>
 							)}
 						</>

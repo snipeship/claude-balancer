@@ -32,7 +32,9 @@ interface BaseScatterChartProps {
 	xAxisLabel?: string;
 	yAxisLabel?: string;
 	xAxisDomain?: [number | "auto", number | "auto"];
+	xAxisTickFormatter?: (value: number | string) => string;
 	yAxisDomain?: [number | "auto", number | "auto"];
+	yAxisTickFormatter?: (value: number | string) => string;
 	tooltipFormatter?: TooltipFormatterFunction;
 	tooltipStyle?: keyof typeof CHART_TOOLTIP_STYLE | object;
 	animationDuration?: number;
@@ -54,7 +56,9 @@ export function BaseScatterChart({
 	xAxisLabel,
 	yAxisLabel,
 	xAxisDomain,
+	xAxisTickFormatter,
 	yAxisDomain,
+	yAxisTickFormatter,
 	tooltipFormatter,
 	tooltipStyle = "default",
 	animationDuration = 1000,
@@ -89,6 +93,7 @@ export function BaseScatterChart({
 						name={xAxisLabel || xKey}
 						className="text-xs"
 						domain={xAxisDomain}
+						tickFormatter={xAxisTickFormatter}
 						label={
 							xAxisLabel
 								? {
@@ -104,6 +109,7 @@ export function BaseScatterChart({
 						name={yAxisLabel || yKey}
 						className="text-xs"
 						domain={yAxisDomain}
+						tickFormatter={yAxisTickFormatter}
 						label={
 							yAxisLabel
 								? {

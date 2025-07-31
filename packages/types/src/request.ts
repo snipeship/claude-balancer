@@ -94,6 +94,10 @@ export interface RequestPayload {
 		success?: boolean;
 		rateLimited?: boolean;
 		accountsAttempted?: number;
+		pending?: boolean;
+		path?: string;
+		method?: string;
+		agentUsed?: string;
 	};
 }
 

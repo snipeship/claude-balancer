@@ -1,3 +1,5 @@
+import { CLAUDE_MODEL_IDS } from "@ccflare/core";
+
 export type AgentSource = "global" | "workspace";
 
 export interface AgentWorkspace {
@@ -20,8 +22,8 @@ export interface Agent {
 export type AgentResponse = Agent[];
 
 export const ALLOWED_MODELS = [
-	"claude-opus-4-20250514",
-	"claude-sonnet-4-20250514",
+	CLAUDE_MODEL_IDS.OPUS_4,
+	CLAUDE_MODEL_IDS.SONNET_4,
 ] as const;
 
 export type AllowedModel = (typeof ALLOWED_MODELS)[number];
