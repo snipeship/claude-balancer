@@ -9,13 +9,14 @@
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {
+		"@ccflare/errors": "workspace:*",
 		"@ccflare/ui-common": "workspace:*",
 		"@ccflare/ui-constants": "workspace:*",
-		"@ccflare/errors": "workspace:*",
 		"@radix-ui/react-dialog": "^1.1.14",
 		"@radix-ui/react-dropdown-menu": "^2.1.15",
 		"@radix-ui/react-label": "^2.1.0",
 		"@radix-ui/react-popover": "^1.1.14",
+		"@radix-ui/react-progress": "^1.1.7",
 		"@radix-ui/react-select": "^2.1.2",
 		"@radix-ui/react-separator": "^1.1.7",
 		"@radix-ui/react-slot": "^1.1.0",

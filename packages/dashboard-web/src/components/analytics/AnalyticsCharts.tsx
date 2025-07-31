@@ -18,6 +18,10 @@ import {
 	type TimeRange,
 } from "../../constants";
 import {
+	formatCompactCurrency,
+	formatCompactNumber,
+} from "../../lib/chart-utils";
+import {
 	BaseAreaChart,
 	BaseBarChart,
 	BaseLineChart,
@@ -645,12 +649,18 @@ export function CumulativeGrowthChart({ data }: CumulativeGrowthChartProps) {
 							className="text-xs"
 							stroke="rgba(255,255,255,0.5)"
 						/>
-						<YAxis yAxisId="tokens" className="text-xs" stroke={COLORS.blue} />
+						<YAxis
+							yAxisId="tokens"
+							className="text-xs"
+							stroke={COLORS.blue}
+							tickFormatter={formatCompactNumber}
+						/>
 						<YAxis
 							yAxisId="cost"
 							orientation="right"
 							className="text-xs"
 							stroke={COLORS.warning}
+							tickFormatter={formatCompactCurrency}
 						/>
 						<Tooltip
 							labelClassName="font-bold"

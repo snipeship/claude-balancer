@@ -1,5 +1,6 @@
 import { formatTokensPerSecond } from "@ccflare/ui-common";
 import { COLORS } from "../../constants";
+import { formatCompactNumber } from "../../lib/chart-utils";
 import { BaseAreaChart } from "./BaseAreaChart";
 
 interface TokenSpeedChartProps {
@@ -47,6 +48,7 @@ export function TokenSpeedChart({
 			xAxisAngle={isLongRange ? -45 : 0}
 			xAxisTextAnchor={isLongRange ? "end" : "middle"}
 			xAxisHeight={isLongRange ? 60 : 30}
+			yAxisTickFormatter={formatCompactNumber}
 			tooltipFormatter={(value) => [
 				formatTokensPerSecond(value as number),
 				"Output Speed",

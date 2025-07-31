@@ -1,6 +1,12 @@
 import { agentRegistry } from "@ccflare/agents";
+import { validateString } from "@ccflare/core";
 import type { DatabaseOperations } from "@ccflare/database";
-import { BadRequest, HttpError, jsonResponse } from "@ccflare/http-common";
+import {
+	BadRequest,
+	errorResponse,
+	HttpError,
+	jsonResponse,
+} from "@ccflare/http-common";
 import { Logger } from "@ccflare/logger";
 import { ALLOWED_MODELS } from "@ccflare/types";
 
@@ -102,6 +108,66 @@ export function createWorkspacesListHandler() {
 		} catch (error) {
 			log.error("Error fetching workspaces:", error);
 			return jsonResponse({ error: "Failed to fetch workspaces" }, 500);
+		}
+	};
+}
+
+export function createBulkAgentPreferenceUpdateHandler(
+	dbOps: DatabaseOperations,
+) {
+	return async (req: Request): Promise<Response> => {
+		const log = new Logger("BulkAgentPreferenceUpdate");
+
+		try {
+			const body = await req.json();
+
+			// Validate input
+			const modelValidation = validateString(body.model, "model", {
+				required: true,
+			});
+
+			if (!modelValidation) {
+				return errorResponse(BadRequest("Model is required"));
+			}
+
+			// Validate model is in allowed list
+			const allowedModels = ALLOWED_MODELS as readonly string[];
+			if (!allowedModels.includes(modelValidation)) {
+				return errorResponse(
+					BadRequest(
+						`Invalid model. Allowed models: ${ALLOWED_MODELS.join(", ")}`,
+					),
+				);
+			}
+
+			// Get all agents from the registry
+			const agents = await agentRegistry.getAgents();
+			const agentIds = agents.map((agent) => agent.id);
+
+			if (agentIds.length === 0) {
+				return jsonResponse({ message: "No agents found to update" });
+			}
+
+			// Update all agent preferences in bulk
+			dbOps.setBulkAgentPreferences(agentIds, modelValidation);
+
+			log.info(
+				`Updated ${agentIds.length} agent preferences to model: ${modelValidation}`,
+			);
+
+			return jsonResponse({
+				success: true,
+				updatedCount: agentIds.length,
+				model: modelValidation,
+			});
+		} catch (error) {
+			log.error("Error updating agent preferences in bulk:", error);
+
+			if (error instanceof Error) {
+				return errorResponse(BadRequest(error.message));
+			}
+
+			return jsonResponse({ error: "Failed to update agent preferences" }, 500);
 		}
 	};
 }

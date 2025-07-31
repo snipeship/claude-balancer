@@ -1,3 +1,4 @@
+import { getModelShortName } from "@ccflare/core";
 import { formatTokensPerSecond } from "@ccflare/ui-common";
 import {
 	Bar,
@@ -11,6 +12,7 @@ import {
 	YAxis,
 } from "recharts";
 import { CHART_PROPS, COLORS } from "../../constants";
+import { formatCompactNumber } from "../../lib/chart-utils";
 import { getTooltipStyles } from "./chart-utils";
 
 interface ModelTokenSpeedData {
@@ -36,7 +38,11 @@ const MODEL_COLORS: Record<string, string> = {
 };
 
 function getModelColor(model: string): string {
-	// Check for exact match first
+	// Try to find color by short name first
+	const shortName = getModelShortName(model);
+	if (MODEL_COLORS[shortName]) return MODEL_COLORS[shortName];
+
+	// Check for exact match
 	if (MODEL_COLORS[model]) return MODEL_COLORS[model];
 
 	// Check for partial matches
@@ -108,7 +114,7 @@ export function ModelTokenSpeedChart({
 				/>
 				<YAxis
 					fontSize={12}
-					tickFormatter={(value) => `${value}`}
+					tickFormatter={formatCompactNumber}
 					label={{
 						value: "Tokens/Second",
 						angle: -90,

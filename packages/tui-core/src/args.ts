@@ -16,6 +16,8 @@ export interface ParsedArgs {
 	analyze?: boolean;
 	resetStats?: boolean;
 	clearHistory?: boolean;
+	getModel?: boolean;
+	setModel?: string;
 }
 
 export function parseArgs(args: string[]): ParsedArgs {
@@ -38,6 +40,8 @@ export function parseArgs(args: string[]): ParsedArgs {
 				analyze: { type: "boolean" },
 				"reset-stats": { type: "boolean" },
 				"clear-history": { type: "boolean" },
+				"get-model": { type: "boolean" },
+				"set-model": { type: "string" },
 			},
 			allowPositionals: true,
 		});
@@ -61,6 +65,8 @@ export function parseArgs(args: string[]): ParsedArgs {
 		if (values.analyze) result.analyze = true;
 		if (values["reset-stats"]) result.resetStats = true;
 		if (values["clear-history"]) result.clearHistory = true;
+		if (values["get-model"]) result.getModel = true;
+		if (values["set-model"]) result.setModel = values["set-model"];
 
 		return result;
 	} catch (error) {

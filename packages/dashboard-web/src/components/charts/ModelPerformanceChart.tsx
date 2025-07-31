@@ -1,5 +1,6 @@
 import { formatPercentage } from "@ccflare/ui-common";
 import { COLORS } from "../../constants";
+import { formatCompactNumber } from "../../lib/chart-utils";
 import { BaseScatterChart } from "./BaseScatterChart";
 
 interface ModelPerformanceChartProps {
@@ -27,6 +28,7 @@ export function ModelPerformanceChart({
 			height={height}
 			fill={COLORS.primary}
 			xAxisLabel="Avg Response Time (ms)"
+			xAxisTickFormatter={formatCompactNumber}
 			yAxisLabel="Error Rate %"
 			tooltipFormatter={(value, name) => {
 				if (name === "avgTime") return [`${value}ms`, "Avg Time"];

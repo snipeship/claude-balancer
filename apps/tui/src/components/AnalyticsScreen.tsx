@@ -1,3 +1,4 @@
+import { getModelShortName } from "@ccflare/core";
 import * as tuiCore from "@ccflare/tui-core";
 import { formatCost, formatNumber, formatPercentage } from "@ccflare/ui-common";
 import { Box, Text, useInput } from "ink";
@@ -33,12 +34,16 @@ export function AnalyticsScreen({ onBack }: AnalyticsScreenProps) {
 		responseTime: number;
 		errorRate: number;
 		cacheHitRate: number;
+		successRate: number;
 	}
 
 	const [timeSeriesData, setTimeSeriesData] = useState<TimeSeriesDataPoint[]>(
 		[],
 	);
 	const [showMenu, setShowMenu] = useState(false);
+	const [modelDistribution, setModelDistribution] = useState<
+		tuiCore.ModelDistribution[]
+	>([]);
 
 	useInput((input, key) => {
 		if (key.escape) {
@@ -75,42 +80,16 @@ export function AnalyticsScreen({ onBack }: AnalyticsScreenProps) {
 	const loadData = useCallback(async () => {
 		try {
 			setLoading(true);
+			// Get basic stats
 			const data = await tuiCore.getStats();
 			setStats(data);
 
-			// Generate mock time series data based on time range
-			const dataPoints =
-				timeRange === "1h"
-					? 12
-					: timeRange === "6h"
-						? 24
-						: timeRange === "24h"
-							? 48
-							: 168;
-			const now = Date.now();
-			const interval =
-				timeRange === "1h"
-					? 5 * 60 * 1000
-					: // 5 minutes
-						timeRange === "6h"
-						? 15 * 60 * 1000
-						: // 15 minutes
-							timeRange === "24h"
-							? 30 * 60 * 1000
-							: // 30 minutes
-								60 * 60 * 1000; // 1 hour
+			// Get analytics with time series data
+			const analytics = await tuiCore.getAnalytics(timeRange);
 
-			const mockTimeSeries = Array.from({ length: dataPoints }, (_, i) => {
-				const timestamp = now - (dataPoints - i - 1) * interval;
-				const time = new Date(timestamp);
-				const hour = time.getHours();
-
-				// Create realistic patterns
-				const baseRequests = 100 + Math.random() * 50;
-				const hourlyMultiplier =
-					0.5 + Math.sin(((hour - 6) * Math.PI) / 12) * 0.5; // Peak at noon
-				const requests = Math.round(baseRequests * hourlyMultiplier);
-
+			// Transform time series data for display
+			const transformedTimeSeries = analytics.timeSeries.map((point) => {
+				const time = new Date(point.time);
 				return {
 					time:
 						timeRange === "7d"
@@ -119,16 +98,17 @@ export function AnalyticsScreen({ onBack }: AnalyticsScreenProps) {
 									hour: "2-digit",
 									minute: "2-digit",
 								}),
-					requests,
-					tokens: requests * (800 + Math.random() * 400),
-					cost: requests * (0.002 + Math.random() * 0.001),
-					responseTime: 800 + Math.random() * 400,
-					errorRate: Math.random() * 5,
-					cacheHitRate: 15 + Math.random() * 25,
+					requests: point.requests,
+					tokens: point.tokens,
+					cost: point.cost,
+					responseTime: point.responseTime,
+					errorRate: point.errorRate,
+					cacheHitRate: point.cacheHitRate,
+					successRate: point.successRate,
 				};
 			});
 
-			setTimeSeriesData(mockTimeSeries);
+			setTimeSeriesData(transformedTimeSeries);
 			setLoading(false);
 		} catch (_error) {
 			setLoading(false);
@@ -140,6 +120,14 @@ export function AnalyticsScreen({ onBack }: AnalyticsScreenProps) {
 		const interval = setInterval(loadData, 30000); // Refresh every 30 seconds
 		return () => clearInterval(interval);
 	}, [loadData]);
+
+	useEffect(() => {
+		if (!loading) {
+			tuiCore.getAnalytics(timeRange).then((analytics) => {
+				setModelDistribution(analytics.modelDistribution);
+			});
+		}
+	}, [timeRange, loading]);
 
 	if (loading || !stats) {
 		return (
@@ -200,23 +188,14 @@ export function AnalyticsScreen({ onBack }: AnalyticsScreenProps) {
 	}));
 
 	// Model distribution for pie chart
-	const modelData = [
-		{
-			label: "claude-3-opus",
-			value: stats.totalRequests * 0.15,
-			color: "magenta" as const,
-		},
-		{
-			label: "claude-3-sonnet",
-			value: stats.totalRequests * 0.45,
-			color: "cyan" as const,
-		},
-		{
-			label: "claude-3-haiku",
-			value: stats.totalRequests * 0.4,
-			color: "yellow" as const,
-		},
-	];
+	const modelData = modelDistribution.slice(0, 3).map((model, index) => ({
+		label: model.model,
+		value: model.count,
+		color: ["magenta", "cyan", "yellow"][index] as
+			| "magenta"
+			| "cyan"
+			| "yellow",
+	}));
 
 	// Account performance for bar chart
 	const accountBarData = stats.accounts.map((account) => ({
@@ -448,14 +427,23 @@ export function AnalyticsScreen({ onBack }: AnalyticsScreenProps) {
 						<Box marginTop={2}>
 							<Text bold>Model Performance</Text>
 							<Box flexDirection="column" marginTop={1}>
-								{modelData.map((model) => (
-									<Box key={model.label}>
-										<Text>{model.label}: </Text>
-										<Text color={model.color}>
-											{formatNumber(model.value)} requests
-										</Text>
-									</Box>
-								))}
+								{modelDistribution.slice(0, 5).map((model) => {
+									const shortName = getModelShortName(model.model);
+									const color = shortName.includes("opus")
+										? "magenta"
+										: shortName.includes("sonnet")
+											? "cyan"
+											: "yellow";
+									return (
+										<Box key={model.model}>
+											<Text>{model.model}: </Text>
+											<Text color={color}>
+												{formatNumber(model.count)} (
+												{formatPercentage(model.percentage)})
+											</Text>
+										</Box>
+									);
+								})}
 							</Box>
 						</Box>
 					</Box>

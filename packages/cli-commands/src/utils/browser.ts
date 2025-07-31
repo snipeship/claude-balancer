@@ -1,20 +1,36 @@
+import { spawn } from "node:child_process";
+import open from "open";
+
 /**
- * Attempt to open a URL in the default browser (best-effort, cross-platform)
+ * Try to open the user's default browser with the given URL.
+ * Returns true on success, false otherwise.
  */
 export async function openBrowser(url: string): Promise<boolean> {
 	try {
-		const platform = process.platform;
-		if (platform === "darwin") {
-			await Bun.spawn(["open", url]);
-		} else if (platform === "win32") {
-			await Bun.spawn(["cmd", "/c", "start", "", url]);
-		} else if (platform === "linux") {
-			await Bun.spawn(["xdg-open", url]);
-		} else {
-			return false; // Unsupported platform
-		}
+		await open(url, { wait: false });
 		return true;
-	} catch {
-		return false;
+	} catch (_err) {
+		// Fallback – Windows quoting is critical!
+		try {
+			if (process.platform === "win32") {
+				// Use powershell -Command Start-Process 'url'
+				spawn(
+					"powershell.exe",
+					["-NoProfile", "-Command", "Start-Process", `'${url}'`],
+					{
+						detached: true,
+						stdio: "ignore",
+					},
+				).unref();
+			} else if (process.platform === "darwin") {
+				spawn("open", [url], { detached: true, stdio: "ignore" }).unref();
+			} else {
+				// Linux generic fallback
+				spawn("xdg-open", [url], { detached: true, stdio: "ignore" }).unref();
+			}
+			return true;
+		} catch {
+			return false;
+		}
 	}
 }

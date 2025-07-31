@@ -3,7 +3,7 @@ declare var self: Worker;
 import { BUFFER_SIZES, estimateCostUSD, TIME_CONSTANTS } from "@ccflare/core";
 import { AsyncDbWriter, DatabaseOperations } from "@ccflare/database";
 import { Logger } from "@ccflare/logger";
-import { NO_ACCOUNT_ID } from "@ccflare/types";
+import { NO_ACCOUNT_ID, type RequestResponse } from "@ccflare/types";
 import { formatCost } from "@ccflare/ui-common";
 import { get_encoding } from "@dqbd/tiktoken";
 import { combineChunks } from "./stream-tee";
@@ -11,6 +11,7 @@ import type {
 	ChunkMessage,
 	EndMessage,
 	StartMessage,
+	SummaryMessage,
 	WorkerMessage,
 } from "./worker-messages";
 
@@ -420,6 +421,36 @@ async function handleEnd(msg: EndMessage): Promise<void> {
 				`Tokens: ${state.usage.totalTokens || 0}, Cost: ${formatCost(state.usage.costUsd)}`,
 		);
 	}
+
+	// Post summary to main thread for real-time updates
+	const summary: RequestResponse = {
+		id: startMessage.requestId,
+		timestamp: new Date(startMessage.timestamp).toISOString(),
+		method: startMessage.method,
+		path: startMessage.path,
+		accountUsed: startMessage.accountId,
+		statusCode: startMessage.responseStatus,
+		success: msg.success,
+		errorMessage: msg.error || null,
+		responseTimeMs: responseTime,
+		failoverAttempts: startMessage.failoverAttempts,
+		model: state.usage.model,
+		promptTokens: state.usage.inputTokens,
+		completionTokens: state.usage.outputTokens,
+		totalTokens: state.usage.totalTokens,
+		inputTokens: state.usage.inputTokens,
+		cacheReadInputTokens: state.usage.cacheReadInputTokens,
+		cacheCreationInputTokens: state.usage.cacheCreationInputTokens,
+		outputTokens: state.usage.outputTokens,
+		costUsd: state.usage.costUsd,
+		agentUsed: state.agentUsed,
+		tokensPerSecond: state.usage.tokensPerSecond,
+	};
+
+	self.postMessage({
+		type: "summary",
+		summary,
+	} satisfies SummaryMessage);
 
 	// Clean up
 	requests.delete(msg.requestId);

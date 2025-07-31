@@ -4,6 +4,10 @@
 
 The ultimate Claude API proxy with intelligent load balancing across multiple accounts. Full visibility into every request, response, and rate limit.
 
+
+https://github.com/user-attachments/assets/c859872f-ca5e-4f8b-b6a0-7cc7461fe62a
+
+
 ![ccflare Dashboard](apps/lander/src/screenshot-dashboard.png)
 
 ## Why ccflare?

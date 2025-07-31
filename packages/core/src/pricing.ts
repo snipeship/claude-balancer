@@ -2,6 +2,7 @@ import { promises as fs } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { TIME_CONSTANTS } from "./constants";
+import { CLAUDE_MODEL_IDS, MODEL_DISPLAY_NAMES } from "./models";
 
 export interface TokenBreakdown {
 	inputTokens?: number;
@@ -35,9 +36,9 @@ interface ApiResponse {
 const BUNDLED_PRICING: ApiResponse = {
 	anthropic: {
 		models: {
-			"claude-3-5-haiku-20241022": {
-				id: "claude-3-5-haiku-20241022",
-				name: "Claude Haiku 3.5",
+			[CLAUDE_MODEL_IDS.HAIKU_3_5]: {
+				id: CLAUDE_MODEL_IDS.HAIKU_3_5,
+				name: MODEL_DISPLAY_NAMES[CLAUDE_MODEL_IDS.HAIKU_3_5],
 				cost: {
 					input: 0.8,
 					output: 4,
@@ -45,9 +46,9 @@ const BUNDLED_PRICING: ApiResponse = {
 					cache_write: 1,
 				},
 			},
-			"claude-3-5-sonnet-20241022": {
-				id: "claude-3-5-sonnet-20241022",
-				name: "Claude Sonnet 3.5 v2",
+			[CLAUDE_MODEL_IDS.SONNET_3_5]: {
+				id: CLAUDE_MODEL_IDS.SONNET_3_5,
+				name: MODEL_DISPLAY_NAMES[CLAUDE_MODEL_IDS.SONNET_3_5],
 				cost: {
 					input: 3,
 					output: 15,
@@ -55,9 +56,9 @@ const BUNDLED_PRICING: ApiResponse = {
 					cache_write: 3.75,
 				},
 			},
-			"claude-sonnet-4-20250514": {
-				id: "claude-sonnet-4-20250514",
-				name: "Claude Sonnet 4",
+			[CLAUDE_MODEL_IDS.SONNET_4]: {
+				id: CLAUDE_MODEL_IDS.SONNET_4,
+				name: MODEL_DISPLAY_NAMES[CLAUDE_MODEL_IDS.SONNET_4],
 				cost: {
 					input: 3,
 					output: 15,
@@ -65,9 +66,9 @@ const BUNDLED_PRICING: ApiResponse = {
 					cache_write: 3.75,
 				},
 			},
-			"claude-opus-4-20250514": {
-				id: "claude-opus-4-20250514",
-				name: "Claude Opus 4",
+			[CLAUDE_MODEL_IDS.OPUS_4]: {
+				id: CLAUDE_MODEL_IDS.OPUS_4,
+				name: MODEL_DISPLAY_NAMES[CLAUDE_MODEL_IDS.OPUS_4],
 				cost: {
 					input: 15,
 					output: 75,

@@ -106,6 +106,7 @@ export interface ConfigResponse {
 	lb_strategy: string;
 	port: number;
 	sessionDurationMs: number;
+	default_agent_model: string;
 }
 
 export interface StrategyUpdateRequest {

@@ -99,7 +99,8 @@ export class AccountPresenter {
 					this.account.rate_limited_until > Date.now(),
 			);
 		}
-		return this.rateLimitStatus !== "OK";
+		const status = this.rateLimitStatus.toLowerCase();
+		return status !== "ok" && !status.startsWith("allowed");
 	}
 }
 

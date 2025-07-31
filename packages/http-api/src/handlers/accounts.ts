@@ -366,3 +366,66 @@ export function createAccountResumeHandler(dbOps: DatabaseOperations) {
 		}
 	};
 }
+
+/**
+ * Create an account rename handler
+ */
+export function createAccountRenameHandler(dbOps: DatabaseOperations) {
+	return async (req: Request, accountId: string): Promise<Response> => {
+		try {
+			const body = await req.json();
+
+			// Validate new name
+			const newName = validateString(body.name, "name", {
+				required: true,
+				minLength: 1,
+				maxLength: 100,
+				pattern: patterns.accountName,
+				transform: sanitizers.trim,
+			});
+
+			if (!newName) {
+				return errorResponse(BadRequest("New account name is required"));
+			}
+
+			// Check if account exists
+			const db = dbOps.getDatabase();
+			const account = db
+				.query<{ name: string }, [string]>(
+					"SELECT name FROM accounts WHERE id = ?",
+				)
+				.get(accountId);
+
+			if (!account) {
+				return errorResponse(NotFound("Account not found"));
+			}
+
+			// Check if new name is already taken
+			const existingAccount = db
+				.query<{ id: string }, [string, string]>(
+					"SELECT id FROM accounts WHERE name = ? AND id != ?",
+				)
+				.get(newName, accountId);
+
+			if (existingAccount) {
+				return errorResponse(
+					BadRequest(`Account name '${newName}' is already taken`),
+				);
+			}
+
+			// Rename the account
+			dbOps.renameAccount(accountId, newName);
+
+			return jsonResponse({
+				success: true,
+				message: `Account renamed from '${account.name}' to '${newName}'`,
+				newName,
+			});
+		} catch (error) {
+			log.error("Account rename error:", error);
+			return errorResponse(
+				error instanceof Error ? error : new Error("Failed to rename account"),
+			);
+		}
+	};
+}

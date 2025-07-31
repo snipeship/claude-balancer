@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 import { Config } from "@ccflare/config";
-import { NETWORK, shutdown } from "@ccflare/core";
+import { CLAUDE_MODEL_IDS, NETWORK, shutdown } from "@ccflare/core";
 import { container, SERVICE_KEYS } from "@ccflare/core-di";
 import { DatabaseFactory } from "@ccflare/database";
 import { Logger } from "@ccflare/logger";
@@ -57,6 +57,8 @@ Options:
   --analyze            Analyze database performance
   --reset-stats        Reset usage statistics
   --clear-history      Clear request history
+  --get-model          Show current default agent model
+  --set-model <model>  Set default agent model (opus-4 or sonnet-4)
   --help, -h           Show this help message
 
 Interactive Mode:
@@ -170,6 +172,36 @@ Examples:
 
 	if (parsed.analyze) {
 		await tuiCore.analyzePerformance();
+		return;
+	}
+
+	if (parsed.getModel) {
+		const config = new Config();
+		const model = config.getDefaultAgentModel();
+		console.log(`Current default agent model: ${model}`);
+		return;
+	}
+
+	if (parsed.setModel) {
+		const config = new Config();
+		// Validate the model
+		const _validModels = [CLAUDE_MODEL_IDS.OPUS_4, CLAUDE_MODEL_IDS.SONNET_4];
+		const modelMap: Record<string, string> = {
+			"opus-4": CLAUDE_MODEL_IDS.OPUS_4,
+			"sonnet-4": CLAUDE_MODEL_IDS.SONNET_4,
+			[CLAUDE_MODEL_IDS.OPUS_4]: CLAUDE_MODEL_IDS.OPUS_4,
+			[CLAUDE_MODEL_IDS.SONNET_4]: CLAUDE_MODEL_IDS.SONNET_4,
+		};
+
+		const fullModel = modelMap[parsed.setModel];
+		if (!fullModel) {
+			console.error(`❌ Invalid model: ${parsed.setModel}`);
+			console.error("Valid models: opus-4, sonnet-4");
+			process.exit(1);
+		}
+
+		config.setDefaultAgentModel(fullModel);
+		console.log(`✅ Default agent model set to: ${fullModel}`);
 		return;
 	}
 

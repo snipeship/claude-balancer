@@ -1,4 +1,4 @@
-import { ServiceUnavailableError } from "@ccflare/core";
+import { requestEvents, ServiceUnavailableError } from "@ccflare/core";
 import { Logger } from "@ccflare/logger";
 import {
 	createRequestMetadata,
@@ -12,7 +12,7 @@ import {
 	TIMING,
 	validateProviderPath,
 } from "./handlers";
-import type { ControlMessage } from "./worker-messages";
+import type { ControlMessage, OutgoingWorkerMessage } from "./worker-messages";
 
 export type { ProxyContext } from "./handlers";
 
@@ -40,6 +40,14 @@ export function getUsageWorker(): Worker {
 		) {
 			usageWorkerInstance.unref(); // Don't keep process alive
 		}
+
+		// Listen for summary messages from worker
+		usageWorkerInstance.onmessage = (ev) => {
+			const data = ev.data as OutgoingWorkerMessage;
+			if (data.type === "summary") {
+				requestEvents.emit("event", { type: "summary", payload: data.summary });
+			}
+		};
 	}
 	return usageWorkerInstance;
 }

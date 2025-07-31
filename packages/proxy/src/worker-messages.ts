@@ -61,3 +61,11 @@ export interface WorkerResponse {
 	requestId?: string;
 	message?: string;
 }
+
+// Worker to main thread messages
+export interface SummaryMessage {
+	type: "summary";
+	summary: import("@ccflare/types").RequestResponse;
+}
+
+export type OutgoingWorkerMessage = SummaryMessage;

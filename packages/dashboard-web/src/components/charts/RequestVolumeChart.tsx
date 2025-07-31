@@ -1,5 +1,6 @@
 import { formatNumber } from "@ccflare/ui-common";
 import { COLORS } from "../../constants";
+import { formatCompactNumber } from "../../lib/chart-utils";
 import { BaseAreaChart } from "./BaseAreaChart";
 
 interface RequestVolumeChartProps {
@@ -45,6 +46,7 @@ export function RequestVolumeChart({
 			xAxisAngle={isLongRange ? -45 : 0}
 			xAxisTextAnchor={isLongRange ? "end" : "middle"}
 			xAxisHeight={isLongRange ? 60 : 30}
+			yAxisTickFormatter={formatCompactNumber}
 			tooltipFormatter={(value) => [formatNumber(value as number), "Requests"]}
 			tooltipLabelFormatter={(label) =>
 				viewMode === "cumulative" ? `Cumulative at ${label}` : label

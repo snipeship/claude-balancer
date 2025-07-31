@@ -52,6 +52,21 @@ export function updateAccountMetadata(
 	// Update basic usage
 	ctx.asyncWriter.enqueue(() => ctx.dbOps.updateAccountUsage(account.id));
 
+	// Extract and update rate limit info for every response
+	const rateLimitInfo = ctx.provider.parseRateLimit(response);
+	// Only update rate limit metadata when we have actual rate limit headers
+	if (rateLimitInfo.statusHeader) {
+		const status = rateLimitInfo.statusHeader;
+		ctx.asyncWriter.enqueue(() =>
+			ctx.dbOps.updateAccountRateLimitMeta(
+				account.id,
+				status,
+				rateLimitInfo.resetTime ?? null,
+				rateLimitInfo.remaining,
+			),
+		);
+	}
+
 	// Extract tier info if supported
 	if (ctx.provider.extractTierInfo) {
 		const extractTierInfo = ctx.provider.extractTierInfo.bind(ctx.provider);
@@ -87,6 +102,8 @@ export function processProxyResponse(
 	// Handle rate limit
 	if (!isStream && rateLimitInfo.isRateLimited && rateLimitInfo.resetTime) {
 		handleRateLimitResponse(account, rateLimitInfo, ctx);
+		// Also update metadata for rate-limited responses
+		updateAccountMetadata(account, response, ctx);
 		return true; // Signal rate limit
 	}
 

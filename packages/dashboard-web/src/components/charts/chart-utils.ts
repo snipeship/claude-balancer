@@ -36,7 +36,9 @@ export interface CommonAxisProps {
 	xAxisAngle?: number;
 	xAxisTextAnchor?: "start" | "middle" | "end";
 	xAxisHeight?: number;
+	xAxisTickFormatter?: (value: number | string) => string;
 	yAxisDomain?: [number | "auto", number | "auto"];
+	yAxisTickFormatter?: (value: number | string) => string;
 }
 
 /**

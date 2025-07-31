@@ -47,7 +47,9 @@ export function BaseLineChart({
 	xAxisAngle = 0,
 	xAxisTextAnchor = "middle",
 	xAxisHeight = 30,
+	xAxisTickFormatter,
 	yAxisDomain,
+	yAxisTickFormatter,
 	tooltipFormatter,
 	tooltipLabelFormatter,
 	tooltipStyle = "default",
@@ -87,8 +89,13 @@ export function BaseLineChart({
 						angle={xAxisAngle}
 						textAnchor={xAxisTextAnchor}
 						height={xAxisHeight}
+						tickFormatter={xAxisTickFormatter}
 					/>
-					<YAxis className="text-xs" domain={yAxisDomain} />
+					<YAxis
+						className="text-xs"
+						domain={yAxisDomain}
+						tickFormatter={yAxisTickFormatter}
+					/>
 					<Tooltip
 						contentStyle={tooltipStyles}
 						formatter={tooltipFormatter}

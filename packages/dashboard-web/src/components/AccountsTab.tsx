@@ -1,12 +1,13 @@
 import { AlertCircle, Plus } from "lucide-react";
 import { useState } from "react";
 import { type Account, api } from "../api";
-import { useAccounts } from "../hooks/queries";
+import { useAccounts, useRenameAccount } from "../hooks/queries";
 import { useApiError } from "../hooks/useApiError";
 import {
 	AccountAddForm,
 	AccountList,
 	DeleteConfirmationDialog,
+	RenameAccountDialog,
 } from "./accounts";
 import { Button } from "./ui/button";
 import {
@@ -25,6 +26,7 @@ export function AccountsTab() {
 		error,
 		refetch: loadAccounts,
 	} = useAccounts();
+	const renameAccount = useRenameAccount();
 
 	const [adding, setAdding] = useState(false);
 	const [confirmDelete, setConfirmDelete] = useState<{
@@ -35,6 +37,13 @@ export function AccountsTab() {
 		show: false,
 		accountName: "",
 		confirmInput: "",
+	});
+	const [renameDialog, setRenameDialog] = useState<{
+		isOpen: boolean;
+		account: Account | null;
+	}>({
+		isOpen: false,
+		account: null,
 	});
 	const [actionError, setActionError] = useState<string | null>(null);
 
@@ -87,6 +96,25 @@ export function AccountsTab() {
 			);
 			await loadAccounts();
 			setConfirmDelete({ show: false, accountName: "", confirmInput: "" });
+			setActionError(null);
+		} catch (err) {
+			setActionError(formatError(err));
+		}
+	};
+
+	const handleRename = (account: Account) => {
+		setRenameDialog({ isOpen: true, account });
+	};
+
+	const handleConfirmRename = async (newName: string) => {
+		if (!renameDialog.account) return;
+
+		try {
+			await renameAccount.mutateAsync({
+				accountId: renameDialog.account.id,
+				newName,
+			});
+			setRenameDialog({ isOpen: false, account: null });
 			setActionError(null);
 		} catch (err) {
 			setActionError(formatError(err));
@@ -166,6 +194,7 @@ export function AccountsTab() {
 						accounts={accounts}
 						onPauseToggle={handlePauseToggle}
 						onRemove={handleRemoveAccount}
+						onRename={handleRename}
 					/>
 				</CardContent>
 			</Card>
@@ -189,6 +218,16 @@ export function AccountsTab() {
 						});
 						setActionError(null);
 					}}
+				/>
+			)}
+
+			{renameDialog.isOpen && renameDialog.account && (
+				<RenameAccountDialog
+					isOpen={renameDialog.isOpen}
+					currentName={renameDialog.account.name}
+					onClose={() => setRenameDialog({ isOpen: false, account: null })}
+					onRename={handleConfirmRename}
+					isLoading={renameAccount.isPending}
 				/>
 			)}
 		</div>

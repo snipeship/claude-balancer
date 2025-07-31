@@ -124,4 +124,8 @@ export class AccountRepository extends BaseRepository<Account> {
 			accountId,
 		]);
 	}
+
+	rename(accountId: string, newName: string): void {
+		this.run(`UPDATE accounts SET name = ? WHERE id = ?`, [newName, accountId]);
+	}
 }

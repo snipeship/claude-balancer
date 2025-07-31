@@ -1,8 +1,14 @@
 import { existsSync } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
+import { Config } from "@ccflare/config";
 import { Logger } from "@ccflare/logger";
-import type { Agent, AgentWorkspace, AllowedModel } from "@ccflare/types";
+import {
+	type Agent,
+	type AgentWorkspace,
+	ALLOWED_MODELS,
+	type AllowedModel,
+} from "@ccflare/types";
 import { getAgentsDirectory } from "./paths";
 import { workspacePersistence } from "./workspace-persistence";
 
@@ -13,7 +19,6 @@ interface AgentCache {
 
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 const DEFAULT_COLOR = "gray";
-const DEFAULT_MODEL: AllowedModel = "claude-sonnet-4-20250514";
 
 const log = new Logger("AgentRegistry");
 
@@ -21,6 +26,11 @@ export class AgentRegistry {
 	private cache: AgentCache | null = null;
 	private workspaces: Map<string, AgentWorkspace> = new Map();
 	private initialized = false;
+	private config: Config;
+
+	constructor() {
+		this.config = new Config();
+	}
 
 	// Initialize the registry (load persisted workspaces)
 	async initialize(): Promise<void> {
@@ -47,11 +57,7 @@ export class AgentRegistry {
 	}
 
 	private isValidModel(model: string): model is AllowedModel {
-		const allowedModels: AllowedModel[] = [
-			"claude-opus-4-20250514",
-			"claude-sonnet-4-20250514",
-		];
-		return allowedModels.includes(model as AllowedModel);
+		return ALLOWED_MODELS.includes(model as AllowedModel);
 	}
 
 	private async loadAgentFromFile(
@@ -101,8 +107,9 @@ export class AgentRegistry {
 				return null;
 			}
 
-			// Extract and validate model (now optional - will use UI preference)
-			const model = data.model || DEFAULT_MODEL;
+			// Extract and validate model (now optional - will use global default)
+			const defaultModel = this.config.getDefaultAgentModel();
+			const model = data.model || defaultModel;
 			if (data.model && !this.isValidModel(model)) {
 				log.warn(
 					`Agent file ${filePath} has invalid model: ${model}. Using default.`,
@@ -116,7 +123,7 @@ export class AgentRegistry {
 				name: data.name,
 				description: data.description,
 				color: data.color || DEFAULT_COLOR,
-				model: DEFAULT_MODEL, // Always use default, UI will override
+				model: defaultModel as AllowedModel, // Always use global default, UI will override
 				systemPrompt: systemPrompt.trim(),
 				source,
 				workspace,

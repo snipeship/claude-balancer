@@ -1,5 +1,6 @@
 import { formatTokens } from "@ccflare/ui-common";
 import { COLORS } from "../../constants";
+import { formatCompactNumber } from "../../lib/chart-utils";
 import { BaseAreaChart } from "./BaseAreaChart";
 
 interface TokenUsageChartProps {
@@ -51,6 +52,7 @@ export function TokenUsageChart({
 			xAxisAngle={isLongRange ? -45 : 0}
 			xAxisTextAnchor={isLongRange ? "end" : "middle"}
 			xAxisHeight={isLongRange ? 60 : 30}
+			yAxisTickFormatter={formatCompactNumber}
 			tooltipFormatter={(value) => [formatTokens(value as number), "Tokens"]}
 			tooltipLabelFormatter={(label) =>
 				viewMode === "cumulative" ? `Cumulative at ${label}` : label

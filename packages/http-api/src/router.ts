@@ -3,6 +3,7 @@ import {
 	createAccountAddHandler,
 	createAccountPauseHandler,
 	createAccountRemoveHandler,
+	createAccountRenameHandler,
 	createAccountResumeHandler,
 	createAccountsListHandler,
 	createAccountTierUpdateHandler,
@@ -10,6 +11,7 @@ import {
 import {
 	createAgentPreferenceUpdateHandler,
 	createAgentsListHandler,
+	createBulkAgentPreferenceUpdateHandler,
 	createWorkspacesListHandler,
 } from "./handlers/agents";
 import { createAnalyticsHandler } from "./handlers/analytics";
@@ -26,6 +28,7 @@ import {
 	createRequestsSummaryHandler,
 	createRequestPayloadHandler,
 } from "./handlers/requests";
+import { createRequestsStreamHandler } from "./handlers/requests-stream";
 import { createStatsHandler, createStatsResetHandler } from "./handlers/stats";
 import type { APIContext } from "./types";
 import { errorResponse } from "./utils/http-error";
@@ -67,6 +70,7 @@ export class APIRouter {
 		const oauthCallbackHandler = createOAuthCallbackHandler(dbOps);
 		const agentsHandler = createAgentsListHandler(dbOps);
 		const workspacesHandler = createWorkspacesListHandler();
+		const requestsStreamHandler = createRequestsStreamHandler();
 
 		// Register routes
 		this.handlers.set("GET:/health", () => healthHandler());
@@ -98,7 +102,10 @@ export class APIRouter {
 				}) || 100;
 			return requestsDetailHandler(limit);
 		});
-		// Note: Dynamic route for request payloads is handled in the route() method
+		this.handlers.set("GET:/api/requests/stream", () =>
+			requestsStreamHandler(),
+		);
+		// Note: Dynamic route for request payloads is handled in the handleRequest() method
 		this.handlers.set("GET:/api/config", () => configHandlers.getConfig());
 		this.handlers.set("GET:/api/config/strategy", () =>
 			configHandlers.getStrategy(),
@@ -109,12 +116,24 @@ export class APIRouter {
 		this.handlers.set("GET:/api/strategies", () =>
 			configHandlers.getStrategies(),
 		);
+		this.handlers.set("GET:/api/config/model", () =>
+			configHandlers.getDefaultAgentModel(),
+		);
+		this.handlers.set("POST:/api/config/model", (req) =>
+			configHandlers.setDefaultAgentModel(req),
+		);
 		this.handlers.set("GET:/api/logs/stream", () => logsStreamHandler());
 		this.handlers.set("GET:/api/logs/history", () => logsHistoryHandler());
 		this.handlers.set("GET:/api/analytics", (_req, url) => {
 			return analyticsHandler(url.searchParams);
 		});
 		this.handlers.set("GET:/api/agents", () => agentsHandler());
+		this.handlers.set("POST:/api/agents/bulk-preference", (req) => {
+			const bulkHandler = createBulkAgentPreferenceUpdateHandler(
+				this.context.dbOps,
+			);
+			return bulkHandler(req);
+		});
 		this.handlers.set("GET:/api/workspaces", () => workspacesHandler());
 	}
 
@@ -182,6 +201,15 @@ export class APIRouter {
 			if (path.endsWith("/resume") && method === "POST") {
 				const resumeHandler = createAccountResumeHandler(this.context.dbOps);
 				return await this.wrapHandler((req) => resumeHandler(req, accountId))(
+					req,
+					url,
+				);
+			}
+
+			// Account rename
+			if (path.endsWith("/rename") && method === "POST") {
+				const renameHandler = createAccountRenameHandler(this.context.dbOps);
+				return await this.wrapHandler((req) => renameHandler(req, accountId))(
 					req,
 					url,
 				);

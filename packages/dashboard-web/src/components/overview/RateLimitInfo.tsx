@@ -14,9 +14,12 @@ interface RateLimitInfoProps {
 }
 
 export function RateLimitInfo({ accounts }: RateLimitInfoProps) {
-	const rateLimitedAccounts = accounts.filter(
-		(acc) => acc.rateLimitStatus !== "OK" && acc.rateLimitStatus !== "Paused",
-	);
+	const rateLimitedAccounts = accounts.filter((acc) => {
+		const status = acc.rateLimitStatus.toLowerCase();
+		return (
+			status !== "ok" && status !== "paused" && !status.startsWith("allowed")
+		);
+	});
 
 	if (rateLimitedAccounts.length === 0) {
 		return null;
@@ -42,13 +45,21 @@ export function RateLimitInfo({ accounts }: RateLimitInfoProps) {
 							? Math.ceil(timeUntilReset / 60000)
 							: null;
 
+						const statusLower = account.rateLimitStatus.toLowerCase();
+						const isHardLimit =
+							statusLower.includes("hard") ||
+							(statusLower.includes("limit") &&
+								!statusLower.includes("warning"));
+						const bgClass = isHardLimit ? "bg-destructive/10" : "bg-warning/10";
+						const iconColor = isHardLimit ? "text-destructive" : "text-warning";
+
 						return (
 							<div
 								key={account.id}
-								className="flex items-center justify-between p-4 rounded-lg bg-warning/10"
+								className={`flex items-center justify-between p-4 rounded-lg ${bgClass}`}
 							>
 								<div className="flex items-center gap-3">
-									<AlertCircle className="h-5 w-5 text-warning" />
+									<AlertCircle className={`h-5 w-5 ${iconColor}`} />
 									<div>
 										<p className="font-medium">{account.name}</p>
 										<p className="text-sm text-muted-foreground">

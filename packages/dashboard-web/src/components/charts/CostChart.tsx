@@ -1,5 +1,6 @@
 import { formatCost } from "@ccflare/ui-common";
 import { COLORS } from "../../constants";
+import { formatCompactCurrency } from "../../lib/chart-utils";
 import { BaseAreaChart } from "./BaseAreaChart";
 
 interface CostChartProps {
@@ -51,6 +52,7 @@ export function CostChart({
 			xAxisAngle={isLongRange ? -45 : 0}
 			xAxisTextAnchor={isLongRange ? "end" : "middle"}
 			xAxisHeight={isLongRange ? 60 : 30}
+			yAxisTickFormatter={formatCompactCurrency}
 			tooltipFormatter={(value) => [formatCost(Number(value)), "Cost"]}
 			tooltipLabelFormatter={(label) =>
 				viewMode === "cumulative" ? `Cumulative at ${label}` : label
