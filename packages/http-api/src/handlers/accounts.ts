@@ -16,6 +16,7 @@ import {
 	NotFound,
 } from "@ccflare/http-common";
 import { Logger } from "@ccflare/logger";
+import type { Account } from "@ccflare/types";
 import type { AccountResponse } from "../types";
 
 const log = new Logger("AccountsHandler");
@@ -23,69 +24,53 @@ const log = new Logger("AccountsHandler");
 /**
  * Create an accounts list handler
  */
-export function createAccountsListHandler(db: Database) {
-	return (): Response => {
-		const now = Date.now();
-		const sessionDuration = 5 * 60 * 60 * 1000; // 5 hours
+export function createAccountsListHandler(dbOps: DatabaseOperations) {
+	return async (): Promise<Response> => {
+		try {
+			const now = Date.now();
+			const sessionDuration = 5 * 60 * 60 * 1000; // 5 hours
 
-		const accounts = db
-			.query(
-				`
-				SELECT 
-					id,
-					name,
-					provider,
-					request_count,
-					total_requests,
-					last_used,
-					created_at,
-					rate_limited_until,
-					rate_limit_reset,
-					rate_limit_status,
-					rate_limit_remaining,
-					session_start,
-					session_request_count,
-					COALESCE(account_tier, 1) as account_tier,
-					COALESCE(paused, 0) as paused,
-					CASE 
-						WHEN expires_at > ?1 THEN 1 
-						ELSE 0 
-					END as token_valid,
-					CASE 
-						WHEN rate_limited_until > ?2 THEN 1
-						ELSE 0
-					END as rate_limited,
-					CASE
-						WHEN session_start IS NOT NULL AND ?3 - session_start < ?4 THEN
-							'Active: ' || session_request_count || ' reqs'
-						ELSE '-'
-					END as session_info
-				FROM accounts
-				ORDER BY request_count DESC
-			`,
-			)
-			.all(now, now, now, sessionDuration) as Array<{
-			id: string;
-			name: string;
-			provider: string | null;
-			request_count: number;
-			total_requests: number;
-			last_used: number | null;
-			created_at: number;
-			rate_limited_until: number | null;
-			rate_limit_reset: number | null;
-			rate_limit_status: string | null;
-			rate_limit_remaining: number | null;
-			session_start: number | null;
-			session_request_count: number;
-			account_tier: number;
-			paused: 0 | 1;
-			token_valid: 0 | 1;
-			rate_limited: 0 | 1;
-			session_info: string | null;
-		}>;
+			// Use the async method if available (new DrizzleDatabaseOperations)
+		let accounts: Account[] = [];
 
-		const response: AccountResponse[] = accounts.map((account) => {
+		if ('getAllAccountsAsync' in dbOps) {
+			accounts = await (dbOps as any).getAllAccountsAsync();
+		} else {
+			// Fallback to sync method for legacy DatabaseOperations
+			accounts = dbOps.getAllAccounts();
+		}
+
+		// Transform accounts to include computed fields
+		const accountsWithComputedFields = accounts.map(account => {
+			const tokenValid = account.expires_at ? account.expires_at > now : false;
+			const rateLimited = account.rate_limited_until ? account.rate_limited_until > now : false;
+			const sessionInfo = account.session_start && (now - account.session_start) < sessionDuration
+				? `Active: ${account.session_request_count} reqs`
+				: '-';
+
+			return {
+				id: account.id,
+				name: account.name,
+				provider: account.provider,
+				request_count: account.request_count,
+				total_requests: account.total_requests,
+				last_used: account.last_used,
+				created_at: account.created_at,
+				rate_limited_until: account.rate_limited_until,
+				rate_limit_reset: account.rate_limit_reset,
+				rate_limit_status: account.rate_limit_status,
+				rate_limit_remaining: account.rate_limit_remaining,
+				session_start: account.session_start,
+				session_request_count: account.session_request_count,
+				account_tier: account.account_tier,
+				paused: account.paused ? 1 : 0,
+				token_valid: tokenValid ? 1 : 0,
+				rate_limited: rateLimited ? 1 : 0,
+				session_info: sessionInfo,
+			};
+		}).sort((a, b) => b.request_count - a.request_count);
+
+		const response: AccountResponse[] = accountsWithComputedFields.map((account) => {
 			let rateLimitStatus = "OK";
 
 			// Use unified rate limit status if available
@@ -132,6 +117,10 @@ export function createAccountsListHandler(db: Database) {
 		});
 
 		return jsonResponse(response);
+		} catch (error) {
+			log.error("Error in accounts list handler:", error);
+			return errorResponse(InternalServerError("Failed to retrieve accounts"));
+		}
 	};
 }
 

@@ -1,0 +1,121 @@
+# Docker Compose for testing ccflare with different database providers
+version: '3.8'
+
+services:
+  # PostgreSQL database for testing
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: ccflare_user
+      POSTGRES_PASSWORD: ccflare_test_password
+      POSTGRES_DB: ccflare_test
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ccflare_user -d ccflare_test"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # MySQL database for testing
+  mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: root_password
+      MYSQL_USER: ccflare_user
+      MYSQL_PASSWORD: ccflare_test_password
+      MYSQL_DATABASE: ccflare_test
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "ccflare_user", "-pccflare_test_password"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ccflare with SQLite (default)
+  ccflare-sqlite:
+    build: .
+    environment:
+      - API_KEY=test-api-key-sqlite
+      - DATABASE_PROVIDER=sqlite
+      - LOG_LEVEL=INFO
+    ports:
+      - "8080:8080"
+    volumes:
+      - sqlite_data:/app/data
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ccflare with PostgreSQL
+  ccflare-postgres:
+    build: .
+    environment:
+      - API_KEY=test-api-key-postgres
+      - DATABASE_PROVIDER=postgresql
+      - DATABASE_URL=postgresql://ccflare_user:ccflare_test_password@postgres:5432/ccflare_test
+      - LOG_LEVEL=INFO
+    ports:
+      - "8081:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ccflare with MySQL
+  ccflare-mysql:
+    build: .
+    environment:
+      - API_KEY=test-api-key-mysql
+      - DATABASE_PROVIDER=mysql
+      - DATABASE_URL=mysql://ccflare_user:ccflare_test_password@mysql:3306/ccflare_test
+      - LOG_LEVEL=INFO
+    ports:
+      - "8082:8080"
+    depends_on:
+      mysql:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Test runner service
+  test-runner:
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+    environment:
+      - SQLITE_URL=http://ccflare-sqlite:8080
+      - POSTGRES_URL=http://ccflare-postgres:8080
+      - MYSQL_URL=http://ccflare-mysql:8080
+      - API_KEY_SQLITE=test-api-key-sqlite
+      - API_KEY_POSTGRES=test-api-key-postgres
+      - API_KEY_MYSQL=test-api-key-mysql
+    depends_on:
+      ccflare-sqlite:
+        condition: service_healthy
+      ccflare-postgres:
+        condition: service_healthy
+      ccflare-mysql:
+        condition: service_healthy
+    volumes:
+      - ./tests:/app/tests
+    command: ["bun", "test", "/app/tests/integration/"]
+
+volumes:
+  postgres_data:
+  mysql_data:
+  sqlite_data:

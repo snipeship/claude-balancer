@@ -28,8 +28,8 @@ export async function getStats(): Promise<Stats> {
 	const statsRepository = dbOps.getStatsRepository();
 
 	// Get overall statistics using the consolidated repository
-	const stats = statsRepository.getAggregatedStats();
-	const activeAccounts = statsRepository.getActiveAccountCount();
+	const stats = await statsRepository.getAggregatedStats();
+	const activeAccounts = await statsRepository.getActiveAccountCount();
 
 	const successRate =
 		stats && stats.totalRequests > 0
@@ -37,10 +37,10 @@ export async function getStats(): Promise<Stats> {
 			: 0;
 
 	// Get per-account stats using the consolidated repository
-	const accountsWithStats = statsRepository.getAccountStats(10, false);
+	const accountsWithStats = await statsRepository.getAccountStats(10, false);
 
 	// Get recent errors
-	const recentErrors = statsRepository.getRecentErrors();
+	const recentErrors = await statsRepository.getRecentErrors();
 
 	return {
 		totalRequests: stats.totalRequests,
@@ -66,21 +66,36 @@ export async function getStats(): Promise<Stats> {
 
 export async function resetStats(): Promise<void> {
 	const dbOps = DatabaseFactory.getInstance();
-	const db = dbOps.getDatabase();
-	// Clear request history
-	db.run("DELETE FROM requests");
-	// Reset account statistics
-	db.run("UPDATE accounts SET request_count = 0, session_request_count = 0");
+
+	// Use proper repository methods instead of raw SQL
+	if ('clearAllRequestsAsync' in dbOps && 'resetAccountStatsAsync' in dbOps) {
+		// Use async methods for DrizzleDatabaseOperations
+		await dbOps.clearAllRequestsAsync();
+		await dbOps.resetAccountStatsAsync();
+	} else {
+		// Fallback to raw SQL for legacy DatabaseOperations
+		const db = dbOps.getDatabase();
+		db.run("DELETE FROM requests");
+		db.run("UPDATE accounts SET request_count = 0, session_request_count = 0");
+	}
 }
 
 export async function clearHistory(): Promise<void> {
 	const dbOps = DatabaseFactory.getInstance();
-	const db = dbOps.getDatabase();
-	db.run("DELETE FROM requests");
+
+	// Use proper repository methods instead of raw SQL
+	if ('clearAllRequestsAsync' in dbOps) {
+		// Use async method for DrizzleDatabaseOperations
+		await dbOps.clearAllRequestsAsync();
+	} else {
+		// Fallback to raw SQL for legacy DatabaseOperations
+		const db = dbOps.getDatabase();
+		db.run("DELETE FROM requests");
+	}
 }
 
 export async function analyzePerformance(): Promise<void> {
 	const dbOps = DatabaseFactory.getInstance();
 	const db = dbOps.getDatabase();
-	cliCommands.analyzePerformance(db);
+	await cliCommands.analyzePerformance(db);
 }

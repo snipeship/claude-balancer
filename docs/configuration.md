@@ -55,7 +55,9 @@ The configuration file is stored at:
   "retry_delay_ms": 1000,
   "retry_backoff": 2,
   "session_duration_ms": 18000000,
-  "port": 8080
+  "port": 8080,
+  "db_provider": "sqlite",
+  "db_url": "postgresql://user:pass@host:5432/ccflare"
 }
 ```
 
@@ -72,6 +74,8 @@ The configuration file is stored at:
 | `retry_backoff` | number | `2` | Exponential backoff multiplier for retry delays |
 | `session_duration_ms` | number | `18000000` (5 hours) | Session persistence duration in milliseconds |
 | `port` | number | `8080` | HTTP server port |
+| `db_provider` | string | `"sqlite"` | Database provider: `"sqlite"`, `"postgresql"`, or `"mysql"` |
+| `db_url` | string | - | Database connection string (required for PostgreSQL/MySQL) |
 
 ### Load Balancing Strategy
 
@@ -102,6 +106,8 @@ The configuration file is stored at:
 | `RETRY_BACKOFF` | `retry_backoff` | number | `RETRY_BACKOFF=1.5` |
 | `SESSION_DURATION_MS` | `session_duration_ms` | number | `SESSION_DURATION_MS=3600000` |
 | `PORT` | `port` | number | `PORT=3000` |
+| `DATABASE_PROVIDER` | `db_provider` | string | `DATABASE_PROVIDER=postgresql` |
+| `DATABASE_URL` | `db_url` | string | `DATABASE_URL=postgresql://user:pass@host:5432/db` |
 | `ccflare_CONFIG_PATH` | - | string | `ccflare_CONFIG_PATH=/etc/ccflare.json` |
 
 ### Additional Environment Variables
@@ -114,6 +120,8 @@ These environment variables are not stored in the configuration file and must be
 | `LOG_FORMAT` | Set log output format (pretty, json) | `pretty` | `LOG_FORMAT=json` |
 | `ccflare_DEBUG` | Enable debug mode with console output | - | `ccflare_DEBUG=1` |
 | `ccflare_DB_PATH` | Custom database file path | Platform-specific | `ccflare_DB_PATH=/var/lib/ccflare/db.sqlite` |
+| `DATABASE_PROVIDER` | Database provider type | `sqlite` | `DATABASE_PROVIDER=postgresql` |
+| `DATABASE_URL` | Database connection string | - | `DATABASE_URL=postgresql://user:pass@host:5432/db` |
 | `CF_PRICING_REFRESH_HOURS` | Hours between pricing data refreshes | `24` | `CF_PRICING_REFRESH_HOURS=12` |
 | `CF_PRICING_OFFLINE` | Disable online pricing updates | - | `CF_PRICING_OFFLINE=1` |
 | `CF_STREAM_USAGE_BUFFER_KB` | Stream usage buffer size in KB | `64` | `CF_STREAM_USAGE_BUFFER_KB=128` |

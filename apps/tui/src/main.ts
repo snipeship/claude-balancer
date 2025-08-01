@@ -17,7 +17,7 @@ let runningServer: ReturnType<typeof startServer> | null = null;
 
 async function ensureServer(port: number) {
 	if (!runningServer) {
-		runningServer = startServer({ port, withDashboard: true });
+		runningServer = await startServer({ port, withDashboard: true });
 	}
 	return runningServer;
 }

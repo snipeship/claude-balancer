@@ -5,12 +5,12 @@ import { jsonResponse } from "@ccflare/http-common";
  * Create a stats handler
  */
 export function createStatsHandler(dbOps: DatabaseOperations) {
-	return (): Response => {
+	return async (): Promise<Response> => {
 		const statsRepository = dbOps.getStatsRepository();
 
 		// Get overall statistics using the consolidated repository
-		const stats = statsRepository.getAggregatedStats();
-		const activeAccounts = statsRepository.getActiveAccountCount();
+		const stats = await statsRepository.getAggregatedStats();
+		const activeAccounts = await statsRepository.getActiveAccountCount();
 
 		const successRate =
 			stats.totalRequests > 0
@@ -18,13 +18,13 @@ export function createStatsHandler(dbOps: DatabaseOperations) {
 				: 0;
 
 		// Get per-account stats (including unauthenticated requests)
-		const accountsWithStats = statsRepository.getAccountStats(10, true);
+		const accountsWithStats = await statsRepository.getAccountStats(10, true);
 
 		// Get recent errors
-		const recentErrors = statsRepository.getRecentErrors();
+		const recentErrors = await statsRepository.getRecentErrors();
 
 		// Get top models
-		const topModels = statsRepository.getTopModels();
+		const topModels = await statsRepository.getTopModels();
 
 		const response = {
 			totalRequests: stats.totalRequests,
@@ -48,15 +48,29 @@ export function createStatsHandler(dbOps: DatabaseOperations) {
  */
 export function createStatsResetHandler(dbOps: DatabaseOperations) {
 	return async (): Promise<Response> => {
-		const db = dbOps.getDatabase();
-		// Clear request history
-		db.run("DELETE FROM requests");
-		// Reset account statistics
-		db.run("UPDATE accounts SET request_count = 0, session_request_count = 0");
+		try {
+			// Use repository methods to clear data instead of raw SQL
+			const statsRepository = dbOps.getStatsRepository();
 
-		return jsonResponse({
-			success: true,
-			message: "Statistics reset successfully",
-		});
+			// Clear request history using repository method
+			if ('clearAll' in statsRepository) {
+				await (statsRepository as any).clearAll();
+			} else {
+				// Fallback for legacy repository
+				const db = dbOps.getDatabase();
+				db.run("DELETE FROM requests");
+				db.run("UPDATE accounts SET request_count = 0, session_request_count = 0");
+			}
+
+			return jsonResponse({
+				success: true,
+				message: "Statistics reset successfully",
+			});
+		} catch (error) {
+			return jsonResponse({
+				success: false,
+				message: `Failed to reset statistics: ${error instanceof Error ? error.message : 'Unknown error'}`,
+			}, 500);
+		}
 	};
 }

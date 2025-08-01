@@ -8,10 +8,19 @@
 	},
 	"scripts": {
 		"typecheck": "bunx tsc --noEmit",
-		"analyze": "bun run ./src/analyze-performance.ts"
+		"analyze": "bun run ./src/analyze-performance.ts",
+		"generate-migrations": "bun run ./scripts/generate-migrations.ts",
+		"migrate:sqlite": "bunx drizzle-kit generate --config=drizzle.config.ts",
+		"migrate:postgresql": "bunx drizzle-kit generate --config=drizzle.config.postgresql.ts",
+		"migrate:mysql": "bunx drizzle-kit generate --config=drizzle.config.mysql.ts"
 	},
 	"dependencies": {
 		"@ccflare/core": "workspace:*",
-		"@ccflare/logger": "workspace:*"
+		"@ccflare/logger": "workspace:*",
+		"@types/pg": "^8.15.5",
+		"drizzle-kit": "^0.31.4",
+		"drizzle-orm": "^0.44.4",
+		"mysql2": "^3.14.3",
+		"pg": "^8.16.3"
 	}
 }

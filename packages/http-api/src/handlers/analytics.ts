@@ -9,6 +9,10 @@ import type { AnalyticsResponse, APIContext } from "../types";
 
 const log = new Logger("AnalyticsHandler");
 
+// TODO: This handler still uses raw SQL queries and should be refactored to use DrizzleORM
+// repository methods for better database provider compatibility. The current implementation
+// works but is SQLite-specific and should be modernized to use the stats repository pattern.
+
 interface BucketConfig {
 	bucketMs: number;
 	displayName: string;

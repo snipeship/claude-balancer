@@ -10,6 +10,7 @@ import {
 	shutdown,
 	TIME_CONSTANTS,
 } from "@ccflare/core";
+import type { Account } from "@ccflare/types";
 import { container, SERVICE_KEYS } from "@ccflare/core-di";
 // Import React dashboard assets
 import dashboardManifest from "@ccflare/dashboard-web/dist/manifest.json";
@@ -80,7 +81,7 @@ function serveDashboardFile(
 let serverInstance: ReturnType<typeof serve> | null = null;
 
 // Export for programmatic use
-export default function startServer(options?: {
+export default async function startServer(options?: {
 	port?: number;
 	withDashboard?: boolean;
 }) {
@@ -97,7 +98,7 @@ export default function startServer(options?: {
 		};
 	}
 
-	const { port = NETWORK.DEFAULT_PORT, withDashboard = true } = options || {};
+	const { port, withDashboard = true } = options || {};
 
 	// Initialize DI container
 	container.registerInstance(SERVICE_KEYS.Config, new Config());
@@ -106,8 +107,8 @@ export default function startServer(options?: {
 	// Initialize components
 	const config = container.resolve<Config>(SERVICE_KEYS.Config);
 	const runtime = config.getRuntime();
-	// Override port if provided
-	if (port !== runtime.port) {
+	// Override port if explicitly provided in options
+	if (port !== undefined && port !== runtime.port) {
 		runtime.port = port;
 	}
 	DatabaseFactory.initialize(undefined, runtime);
@@ -151,7 +152,7 @@ export default function startServer(options?: {
 			"session_duration_ms",
 			TIME_CONSTANTS.SESSION_DURATION_DEFAULT,
 		) as number,
-		port,
+		port: runtime.port,
 	};
 
 	// Now create the strategy with runtime config
@@ -196,24 +197,65 @@ export default function startServer(options?: {
 				return apiResponse;
 			}
 
+			// Check API key for auth protection
+			const apiKey = process.env.API_KEY;
+
 			// Dashboard routes (only if enabled)
 			if (withDashboard) {
-				if (url.pathname === "/" || url.pathname === "/dashboard") {
+				// Dashboard routes with API key protection
+				if (url.pathname === "/" || url.pathname === "/dashboard" ||
+					(apiKey && url.pathname === `/${apiKey}/`)) {
+
+					// If API key is required, only allow /{key}/ access
+					if (apiKey && url.pathname !== `/${apiKey}/`) {
+						return new Response("Not Found", { status: HTTP_STATUS.NOT_FOUND });
+					}
+
 					return serveDashboardFile("/index.html", "text/html");
 				}
 
-				// Serve dashboard static assets
-				if ((dashboardManifest as Record<string, string>)[url.pathname]) {
+				// Serve dashboard static assets with auth protection
+				let assetPathname = url.pathname;
+				let isAuthenticatedAssetRequest = false;
+
+				// If API key is set, check for auth-prefixed asset paths
+				if (apiKey && url.pathname.startsWith(`/${apiKey}/`)) {
+					// Strip the key prefix for asset lookup
+					assetPathname = url.pathname.substring(`/${apiKey}`.length);
+					isAuthenticatedAssetRequest = true;
+				}
+
+				if ((dashboardManifest as Record<string, string>)[assetPathname]) {
+					// If API key is required but request is not authenticated, block access
+					if (apiKey && !isAuthenticatedAssetRequest) {
+						return new Response("Not Found", { status: HTTP_STATUS.NOT_FOUND });
+					}
+
 					return serveDashboardFile(
-						url.pathname,
+						assetPathname,
 						undefined,
 						CACHE.CACHE_CONTROL_STATIC,
 					);
 				}
 			}
 
-			// All other paths go to proxy
-			return handleProxy(req, url, proxyContext);
+			// Handle API authentication and proxying
+			if (apiKey) {
+				// Auth required - check for /key/v1/ format
+				const pathParts = url.pathname.split('/').filter(Boolean);
+				if (pathParts[0] === apiKey && pathParts[1] === 'v1') {
+					// Valid auth - rewrite path and proxy
+					url.pathname = '/' + pathParts.slice(1).join('/');
+					return handleProxy(req, url, proxyContext);
+				}
+				return new Response("Not Found", { status: HTTP_STATUS.NOT_FOUND });
+			} else {
+				// No auth required - allow direct /v1/ access
+				if (!url.pathname.startsWith("/v1/")) {
+					return new Response("Not Found", { status: HTTP_STATUS.NOT_FOUND });
+				}
+				return handleProxy(req, url, proxyContext);
+			}
 		},
 	});
 
@@ -243,10 +285,30 @@ Available endpoints:
 	);
 
 	// Log initial account status
-	const accounts = dbOps.getAllAccounts();
-	const activeAccounts = accounts.filter(
-		(a) => !a.paused && (!a.expires_at || a.expires_at > Date.now()),
-	);
+	let accounts: Account[] = [];
+	let activeAccounts: Account[] = [];
+
+	// Use async method if available (new DrizzleDatabaseOperations)
+	if ('getAllAccountsAsync' in dbOps) {
+		try {
+			accounts = await (dbOps as any).getAllAccountsAsync();
+			activeAccounts = accounts.filter(
+				(a) => !a.paused && (!a.expires_at || a.expires_at > Date.now()),
+			);
+		} catch (error) {
+			log.warn("Failed to get accounts asynchronously, falling back to sync method");
+			accounts = dbOps.getAllAccounts();
+			activeAccounts = accounts.filter(
+				(a) => !a.paused && (!a.expires_at || a.expires_at > Date.now()),
+			);
+		}
+	} else {
+		// Fallback to sync method for legacy DatabaseOperations
+		accounts = dbOps.getAllAccounts();
+		activeAccounts = accounts.filter(
+			(a) => !a.paused && (!a.expires_at || a.expires_at > Date.now()),
+		);
+	}
 	log.info(
 		`Loaded ${accounts.length} accounts (${activeAccounts.length} active)`,
 	);
@@ -287,5 +349,8 @@ process.on("SIGTERM", () => handleGracefulShutdown("SIGTERM"));
 
 // Run server if this is the main entry point
 if (import.meta.main) {
-	startServer();
+	startServer().catch(error => {
+		console.error("Failed to start server:", error);
+		process.exit(1);
+	});
 }

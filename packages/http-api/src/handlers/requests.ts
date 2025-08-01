@@ -1,32 +1,25 @@
-import type { Database } from "bun:sqlite";
+
 import type { DatabaseOperations } from "@ccflare/database";
+import { validateString } from "@ccflare/core";
 import { jsonResponse } from "@ccflare/http-common";
 import type { RequestResponse } from "../types";
 
 /**
- * Create a requests summary handler (existing functionality)
+ * Create a requests summary handler (updated to use repository pattern)
  */
-export function createRequestsSummaryHandler(db: Database) {
-	return (limit: number = 50): Response => {
-		const requests = db
-			.query(
-				`
-				SELECT r.*, a.name as account_name
-				FROM requests r
-				LEFT JOIN accounts a ON r.account_used = a.id
-				ORDER BY r.timestamp DESC
-				LIMIT ?1
-			`,
-			)
-			.all(limit) as Array<{
-			id: string;
-			timestamp: number;
-			method: string;
-			path: string;
-			account_used: string | null;
-			account_name: string | null;
-			status_code: number | null;
-			success: 0 | 1;
+export function createRequestsSummaryHandler(dbOps: DatabaseOperations) {
+	return async (limit: number = 50): Promise<Response> => {
+		try {
+			// Use async method if available (new DrizzleDatabaseOperations)
+			let requests: Array<{
+				id: string;
+				timestamp: number;
+				method: string;
+				path: string;
+				account_used: string | null;
+				account_name: string | null;
+				status_code: number | null;
+				success: 0 | 1;
 			error_message: string | null;
 			response_time_ms: number | null;
 			failover_attempts: number;
@@ -42,6 +35,10 @@ export function createRequestsSummaryHandler(db: Database) {
 			agent_used: string | null;
 			output_tokens_per_second: number | null;
 		}>;
+
+		// Since we updated the factory to always use DrizzleDatabaseOperations,
+		// we can directly use the async repository method
+		requests = await (dbOps as any).getRequestsWithAccountNamesAsync(limit);
 
 		const response: RequestResponse[] = requests.map((request) => ({
 			id: request.id,
@@ -69,6 +66,10 @@ export function createRequestsSummaryHandler(db: Database) {
 		}));
 
 		return jsonResponse(response);
+		} catch (error) {
+			console.error("Error fetching requests:", error);
+			return jsonResponse({ error: "Failed to fetch requests" }, 500);
+		}
 	};
 }
 
@@ -76,21 +77,84 @@ export function createRequestsSummaryHandler(db: Database) {
  * Create a detailed requests handler with full payload data
  */
 export function createRequestsDetailHandler(dbOps: DatabaseOperations) {
-	return (limit = 100): Response => {
-		const rows = dbOps.listRequestPayloadsWithAccountNames(limit);
-		const parsed = rows.map((r) => {
-			try {
-				const data = JSON.parse(r.json);
-				// Add account name to the meta field if available
-				if (r.account_name && data.meta) {
-					data.meta.accountName = r.account_name;
-				}
-				return { id: r.id, ...data };
-			} catch {
-				return { id: r.id, error: "Failed to parse payload" };
-			}
-		});
+	return async (limit = 100): Promise<Response> => {
+		try {
+			// Use async method if available (DrizzleDatabaseOperations)
+			let rows: Array<{ id: string; json: string; account_name: string | null }>;
 
-		return jsonResponse(parsed);
+			if ('listRequestPayloadsWithAccountNamesAsync' in dbOps) {
+				rows = await (dbOps as any).listRequestPayloadsWithAccountNamesAsync(limit);
+			} else {
+				// Fallback to sync method for legacy DatabaseOperations
+				rows = dbOps.listRequestPayloadsWithAccountNames(limit);
+			}
+
+			const parsed = rows.map((r) => {
+				try {
+					const data = JSON.parse(r.json);
+					// Add account name to the meta field if available
+					if (r.account_name && data.meta) {
+						data.meta.accountName = r.account_name;
+					}
+					return { id: r.id, ...data };
+				} catch {
+					return { id: r.id, error: "Failed to parse payload" };
+				}
+			});
+
+			return jsonResponse(parsed);
+		} catch (error) {
+			return jsonResponse({
+				error: `Failed to retrieve request details: ${error instanceof Error ? error.message : 'Unknown error'}`
+			}, 500);
+		}
+	};
+}
+
+/**
+ * Create a handler for individual request payload retrieval
+ */
+export function createRequestPayloadHandler(dbOps: DatabaseOperations) {
+	return async (requestId: string): Promise<Response> => {
+		// Validate requestId parameter
+		try {
+			validateString(requestId, 'requestId', {
+				required: true,
+				minLength: 1,
+				maxLength: 255,
+				pattern: /^[a-zA-Z0-9\-_]+$/
+			});
+		} catch (error) {
+			return jsonResponse(
+				{ error: 'Invalid request ID format' },
+				400
+			);
+		}
+
+		try {
+			let payload: unknown | null;
+
+			// Use async method if available (DrizzleDatabaseOperations)
+			if ('getRequestPayloadAsync' in dbOps) {
+				payload = await (dbOps as any).getRequestPayloadAsync(requestId);
+			} else {
+				// Fallback to sync method for legacy DatabaseOperations
+				payload = dbOps.getRequestPayload(requestId);
+			}
+
+			if (!payload) {
+				return jsonResponse(
+					{ error: 'Request not found' },
+					404
+				);
+			}
+
+			// The payload is already parsed by the repository, return it directly
+			return jsonResponse(payload);
+		} catch (error) {
+			return jsonResponse({
+				error: `Failed to retrieve request payload: ${error instanceof Error ? error.message : 'Unknown error'}`
+			}, 500);
+		}
 	};
 }

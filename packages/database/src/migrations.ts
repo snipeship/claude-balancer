@@ -4,7 +4,12 @@ import { addPerformanceIndexes } from "./performance-indexes";
 
 const log = new Logger("DatabaseMigrations");
 
+/**
+ * @deprecated This migration system is deprecated. Use DrizzleDatabaseOperations instead.
+ * This function is kept for backward compatibility only.
+ */
 export function ensureSchema(db: Database): void {
+	log.warn("DEPRECATED: ensureSchema() is deprecated. Use DrizzleDatabaseOperations for new projects.");
 	// Create accounts table
 	db.run(`
 		CREATE TABLE IF NOT EXISTS accounts (
@@ -50,9 +55,19 @@ export function ensureSchema(db: Database): void {
 		)
 	`);
 
-	// Create index for faster queries
+	// Create indexes for faster queries
 	db.run(
 		`CREATE INDEX IF NOT EXISTS idx_requests_timestamp ON requests(timestamp DESC)`,
+	);
+
+	// Index for JOIN performance with accounts table
+	db.run(
+		`CREATE INDEX IF NOT EXISTS idx_requests_account_used ON requests(account_used)`,
+	);
+
+	// Composite index for the main requests query (timestamp DESC with account_used for JOIN)
+	db.run(
+		`CREATE INDEX IF NOT EXISTS idx_requests_timestamp_account ON requests(timestamp DESC, account_used)`,
 	);
 
 	// Create request_payloads table for storing full request/response data
@@ -92,7 +107,13 @@ export function ensureSchema(db: Database): void {
 	`);
 }
 
+/**
+ * @deprecated This migration system is deprecated. Use DrizzleDatabaseOperations instead.
+ * This function is kept for backward compatibility only.
+ */
 export function runMigrations(db: Database): void {
+	log.warn("DEPRECATED: runMigrations() is deprecated. Use DrizzleDatabaseOperations for new projects.");
+
 	// Ensure base schema exists first
 	ensureSchema(db);
 	// Check if columns exist before adding them
