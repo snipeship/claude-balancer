@@ -1,9 +1,5 @@
 import { validateNumber, validateString } from "@ccflare/core";
-import type {
-	DatabaseOperations,
-	SearchFilters,
-	SearchResult,
-} from "@ccflare/database";
+import type { DatabaseOperations, SearchFilters } from "@ccflare/database";
 import { jsonResponse } from "@ccflare/http-common";
 
 /**
@@ -118,17 +114,17 @@ export function createRequestsSearchHandler(dbOps: DatabaseOperations) {
 			// Process the query to handle camelCase and other patterns
 			let ftsQuery = query;
 			const isCamelCase = /[a-z][A-Z]/.test(query);
-			
+
 			// Escape FTS5 special characters first
 			const escapedQuery = query
 				.replace(/"/g, '""') // Escape quotes
 				.replace(/[*()]/g, ""); // Remove special FTS chars
-			
+
 			if (isCamelCase) {
 				// For camelCase, split it for FTS5 search
-				ftsQuery = escapedQuery.replace(/([a-z])([A-Z])/g, '$1 $2');
+				ftsQuery = escapedQuery.replace(/([a-z])([A-Z])/g, "$1 $2");
 				ftsQuery = `"${ftsQuery}"`;
-			} else if (escapedQuery.includes(' ')) {
+			} else if (escapedQuery.includes(" ")) {
 				// For multi-word queries, use phrase search
 				ftsQuery = `"${escapedQuery}"`;
 			} else {
@@ -202,58 +198,76 @@ export function createRequestsSearchHandler(dbOps: DatabaseOperations) {
 			}>;
 
 			// Helper to find and extract snippets with the search term
-			const findMatchingSnippets = (text: string, searchTerm: string, contextChars = 50) => {
+			const findMatchingSnippets = (
+				text: string,
+				searchTerm: string,
+				contextChars = 50,
+			) => {
 				if (!text) return [];
-				
+
 				const snippets: string[] = [];
 				// Escape regex special characters in search term
-				const escapedTerm = searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-				const searchRegex = new RegExp(escapedTerm, 'gi');
+				const escapedTerm = searchTerm.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+				const searchRegex = new RegExp(escapedTerm, "gi");
 				let match;
-				
+
 				while ((match = searchRegex.exec(text)) !== null) {
 					const matchStart = match.index;
 					const matchEnd = matchStart + match[0].length;
-					
+
 					// Find context boundaries
 					let contextStart = Math.max(0, matchStart - contextChars);
 					let contextEnd = Math.min(text.length, matchEnd + contextChars);
-					
+
 					// Adjust to word boundaries
-					while (contextStart > 0 && text[contextStart - 1] !== ' ' && text[contextStart - 1] !== '\n') {
+					while (
+						contextStart > 0 &&
+						text[contextStart - 1] !== " " &&
+						text[contextStart - 1] !== "\n"
+					) {
 						contextStart--;
 					}
-					while (contextEnd < text.length && text[contextEnd] !== ' ' && text[contextEnd] !== '\n') {
+					while (
+						contextEnd < text.length &&
+						text[contextEnd] !== " " &&
+						text[contextEnd] !== "\n"
+					) {
 						contextEnd++;
 					}
-					
+
 					// Extract snippet
 					let snippet = text.substring(contextStart, contextEnd);
-					
+
 					// Highlight the matched term
-					snippet = snippet.replace(new RegExp(`(${escapedTerm})`, 'gi'), '<mark>$1</mark>');
-					
+					snippet = snippet.replace(
+						new RegExp(`(${escapedTerm})`, "gi"),
+						"<mark>$1</mark>",
+					);
+
 					// Add ellipsis if needed
-					if (contextStart > 0) snippet = '...' + snippet;
-					if (contextEnd < text.length) snippet = snippet + '...';
-					
+					if (contextStart > 0) snippet = `...${snippet}`;
+					if (contextEnd < text.length) snippet = `${snippet}...`;
+
 					snippets.push(snippet.trim());
 				}
-				
+
 				return snippets;
 			};
 
 			// Transform results and extract all snippets
-			const searchResults: SearchResult[] = rawResults
+			const searchResults = rawResults
 				.map((row) => {
 					const requestSnippets = findMatchingSnippets(row.request_body, query);
-					const responseSnippets = findMatchingSnippets(row.response_body, query);
-					
+					const responseSnippets = findMatchingSnippets(
+						row.response_body,
+						query,
+					);
+
 					// Only include results that actually have matches
 					if (requestSnippets.length === 0 && responseSnippets.length === 0) {
 						return null;
 					}
-					
+
 					return {
 						id: row.id,
 						timestamp: row.timestamp,
@@ -271,7 +285,7 @@ export function createRequestsSearchHandler(dbOps: DatabaseOperations) {
 						responseSnippets,
 					};
 				})
-				.filter((result): result is SearchResult => result !== null);
+				.filter((result) => result !== null);
 
 			return jsonResponse({
 				results: searchResults,

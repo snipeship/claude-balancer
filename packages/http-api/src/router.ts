@@ -28,8 +28,8 @@ import {
 	createRequestsDetailHandler,
 	createRequestsSummaryHandler,
 } from "./handlers/requests";
-import { createRequestsStreamHandler } from "./handlers/requests-stream";
 import { createRequestsSearchHandler } from "./handlers/requests-search";
+import { createRequestsStreamHandler } from "./handlers/requests-stream";
 import { createStatsHandler, createStatsResetHandler } from "./handlers/stats";
 import type { APIContext } from "./types";
 import { errorResponse } from "./utils/http-error";
@@ -136,7 +136,7 @@ export class APIRouter {
 			return bulkHandler(req);
 		});
 		this.handlers.set("GET:/api/workspaces", () => workspacesHandler());
-		this.handlers.set("GET:/api/requests/search", (req, url) => searchHandler(req, url));
+		this.handlers.set("GET:/api/requests/search", (req) => searchHandler(req));
 	}
 
 	/**

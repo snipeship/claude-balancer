@@ -55,6 +55,8 @@ export interface SearchResult {
 	agentUsed: string | null;
 	requestSnippet?: string;
 	responseSnippet?: string;
+	requestSnippets?: string[];
+	responseSnippets?: string[];
 	rank: number;
 }
 

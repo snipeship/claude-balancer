@@ -394,7 +394,7 @@ function addFTSMigration(
 
 		// Note: We can't create triggers that decode base64 since SQLite doesn't support custom functions in triggers
 		// Instead, we'll handle the decoding when we insert payloads in the RequestRepository
-		
+
 		// Create delete trigger
 		db.run(`
 			CREATE TRIGGER request_payloads_fts_delete

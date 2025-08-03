@@ -58,14 +58,6 @@ export interface SearchResult {
 	rank: number;
 }
 
-export interface SearchSnippet {
-	id: string;
-	requestBody?: string;
-	responseBody?: string;
-	highlightedRequest?: string;
-	highlightedResponse?: string;
-}
-
 export class RequestRepository extends BaseRepository<RequestData> {
 	saveMeta(
 		id: string,
@@ -173,8 +165,10 @@ export class RequestRepository extends BaseRepository<RequestData> {
 		try {
 			const payload = data as any;
 			const requestBody = this.decodeBase64Content(payload.request?.body || "");
-			const responseBody = this.decodeBase64Content(payload.response?.body || "");
-			
+			const responseBody = this.decodeBase64Content(
+				payload.response?.body || "",
+			);
+
 			// Check if FTS record exists
 			const exists = this.get<{ id: string }>(
 				`SELECT id FROM request_payloads_fts WHERE id = ?`,
@@ -449,47 +443,6 @@ export class RequestRepository extends BaseRepository<RequestData> {
 	}
 
 	/**
-	 * Search request/response payloads using FTS5 MATCH
-	 */
-	searchPayloads(
-		query: string,
-		limit = 50,
-		offset = 0,
-	): Array<{
-		id: string;
-		rank: number;
-		requestSnippet: string;
-		responseSnippet: string;
-	}> {
-		const results = this.query<{
-			id: string;
-			rank: number;
-			request_body: string;
-			response_body: string;
-		}>(
-			`
-			SELECT 
-				fts.id,
-				fts.rank,
-				snippet(request_payloads_fts, 1, '<mark>', '</mark>', '...', 64) as request_body,
-				snippet(request_payloads_fts, 2, '<mark>', '</mark>', '...', 64) as response_body
-			FROM request_payloads_fts fts
-			WHERE request_payloads_fts MATCH ?
-			ORDER BY rank
-			LIMIT ? OFFSET ?
-		`,
-			[query, limit, offset],
-		);
-
-		return results.map((row) => ({
-			id: row.id,
-			rank: row.rank,
-			requestSnippet: row.request_body, // Already decoded by snippet()
-			responseSnippet: row.response_body, // Already decoded by snippet()
-		}));
-	}
-
-	/**
 	 * Comprehensive search with filters and metadata
 	 */
 	getSearchResults(
@@ -621,41 +574,6 @@ export class RequestRepository extends BaseRepository<RequestData> {
 			requestSnippet: row.request_snippet, // Already decoded by snippet()
 			responseSnippet: row.response_snippet, // Already decoded by snippet()
 		}));
-	}
-
-	/**
-	 * Get detailed search snippets with context around matches
-	 */
-	getSearchSnippet(id: string, query: string): SearchSnippet | null {
-		const result = this.get<{
-			id: string;
-			request_body: string;
-			response_body: string;
-			highlighted_request: string;
-			highlighted_response: string;
-		}>(
-			`
-			SELECT 
-				fts.id,
-				fts.request_body,
-				fts.response_body,
-				snippet(request_payloads_fts, 1, '<mark>', '</mark>', '...', 128) as highlighted_request,
-				snippet(request_payloads_fts, 2, '<mark>', '</mark>', '...', 128) as highlighted_response
-			FROM request_payloads_fts fts
-			WHERE fts.id = ? AND request_payloads_fts MATCH ?
-		`,
-			[id, query],
-		);
-
-		if (!result) return null;
-
-		return {
-			id: result.id,
-			requestBody: result.request_body, // Already decoded in FTS table
-			responseBody: result.response_body, // Already decoded in FTS table
-			highlightedRequest: result.highlighted_request, // Already decoded by snippet()
-			highlightedResponse: result.highlighted_response, // Already decoded by snippet()
-		};
 	}
 
 	/**

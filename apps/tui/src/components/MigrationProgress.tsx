@@ -11,7 +11,7 @@ function SimpleProgressBar({ percent }: { percent: number }) {
 	const width = 40;
 	const filled = Math.round(width * percent);
 	const empty = width - filled;
-	
+
 	return (
 		<Box>
 			<Text color="cyan">{"█".repeat(filled)}</Text>

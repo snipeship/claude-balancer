@@ -17,7 +17,6 @@ import {
 	RequestRepository,
 	type SearchFilters,
 	type SearchResult,
-	type SearchSnippet,
 } from "./repositories/request.repository";
 import { StatsRepository } from "./repositories/stats.repository";
 import { StrategyRepository } from "./repositories/strategy.repository";
@@ -336,28 +335,12 @@ export class DatabaseOperations implements StrategyStore, Disposable {
 	}
 
 	// Search operations delegated to request repository
-	searchPayloads(
-		query: string,
-		limit = 50,
-		offset = 0,
-	): Array<{
-		id: string;
-		rank: number;
-		requestSnippet: string;
-		responseSnippet: string;
-	}> {
-		return this.requests.searchPayloads(query, limit, offset);
-	}
 
 	getSearchResults(
 		query: string,
 		filters?: SearchFilters,
 	): Array<SearchResult> {
 		return this.requests.getSearchResults(query, filters);
-	}
-
-	getSearchSnippet(id: string, query: string): SearchSnippet | null {
-		return this.requests.getSearchSnippet(id, query);
 	}
 
 	close(): void {

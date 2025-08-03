@@ -14,7 +14,6 @@ export type {
 	RequestData,
 	SearchFilters,
 	SearchResult,
-	SearchSnippet,
 } from "./repositories/request.repository";
 // Re-export repository types
 export type { StatsRepository } from "./repositories/stats.repository";

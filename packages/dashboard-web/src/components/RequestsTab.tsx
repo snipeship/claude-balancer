@@ -396,7 +396,7 @@ export function RequestsTab() {
 								Request matches ({result.requestSnippets.length}):{" "}
 							</span>
 							<div className="space-y-1 mt-1">
-								{result.requestSnippets.map((snippet, idx) => (
+								{result.requestSnippets.map((snippet: string, idx: number) => (
 									<div
 										key={`req-${result.id}-${idx}`}
 										className="bg-muted/50 p-2 rounded text-xs font-mono"
@@ -425,7 +425,7 @@ export function RequestsTab() {
 								Response matches ({result.responseSnippets.length}):{" "}
 							</span>
 							<div className="space-y-1 mt-1">
-								{result.responseSnippets.map((snippet, idx) => (
+								{result.responseSnippets.map((snippet: string, idx: number) => (
 									<div
 										key={`res-${result.id}-${idx}`}
 										className="bg-muted/50 p-2 rounded text-xs font-mono"
