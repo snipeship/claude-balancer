@@ -3,7 +3,11 @@ import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import type { Disposable } from "@ccflare/core";
 import type { Account, StrategyStore } from "@ccflare/types";
-import { ensureSchema, runMigrations } from "./migrations";
+import {
+	ensureSchema,
+	type MigrationProgress,
+	runMigrations,
+} from "./migrations";
 import { resolveDbPath } from "./paths";
 import { AccountRepository } from "./repositories/account.repository";
 import { AgentPreferenceRepository } from "./repositories/agent-preference.repository";
@@ -11,6 +15,9 @@ import { OAuthRepository } from "./repositories/oauth.repository";
 import {
 	type RequestData,
 	RequestRepository,
+	type SearchFilters,
+	type SearchResult,
+	type SearchSnippet,
 } from "./repositories/request.repository";
 import { StatsRepository } from "./repositories/stats.repository";
 import { StrategyRepository } from "./repositories/strategy.repository";
@@ -35,7 +42,10 @@ export class DatabaseOperations implements StrategyStore, Disposable {
 	private stats: StatsRepository;
 	private agentPreferences: AgentPreferenceRepository;
 
-	constructor(dbPath?: string) {
+	constructor(
+		dbPath?: string,
+		onMigrationProgress?: (progress: MigrationProgress) => void,
+	) {
 		const resolvedPath = dbPath ?? resolveDbPath();
 
 		// Ensure the directory exists
@@ -50,7 +60,7 @@ export class DatabaseOperations implements StrategyStore, Disposable {
 		this.db.exec("PRAGMA synchronous = NORMAL"); // Better performance while maintaining safety
 
 		ensureSchema(this.db);
-		runMigrations(this.db);
+		runMigrations(this.db, onMigrationProgress);
 
 		// Initialize repositories
 		this.accounts = new AccountRepository(this.db);
@@ -323,6 +333,31 @@ export class DatabaseOperations implements StrategyStore, Disposable {
 
 	setBulkAgentPreferences(agentIds: string[], model: string): void {
 		this.agentPreferences.setBulkPreferences(agentIds, model);
+	}
+
+	// Search operations delegated to request repository
+	searchPayloads(
+		query: string,
+		limit = 50,
+		offset = 0,
+	): Array<{
+		id: string;
+		rank: number;
+		requestSnippet: string;
+		responseSnippet: string;
+	}> {
+		return this.requests.searchPayloads(query, limit, offset);
+	}
+
+	getSearchResults(
+		query: string,
+		filters?: SearchFilters,
+	): Array<SearchResult> {
+		return this.requests.getSearchResults(query, filters);
+	}
+
+	getSearchSnippet(id: string, query: string): SearchSnippet | null {
+		return this.requests.getSearchSnippet(id, query);
 	}
 
 	close(): void {

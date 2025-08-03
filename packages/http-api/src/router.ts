@@ -29,6 +29,7 @@ import {
 	createRequestsSummaryHandler,
 } from "./handlers/requests";
 import { createRequestsStreamHandler } from "./handlers/requests-stream";
+import { createRequestsSearchHandler } from "./handlers/requests-search";
 import { createStatsHandler, createStatsResetHandler } from "./handlers/stats";
 import type { APIContext } from "./types";
 import { errorResponse } from "./utils/http-error";
@@ -71,6 +72,7 @@ export class APIRouter {
 		const agentsHandler = createAgentsListHandler(dbOps);
 		const workspacesHandler = createWorkspacesListHandler();
 		const requestsStreamHandler = createRequestsStreamHandler();
+		const searchHandler = createRequestsSearchHandler(dbOps);
 
 		// Register routes
 		this.handlers.set("GET:/health", () => healthHandler());
@@ -134,6 +136,7 @@ export class APIRouter {
 			return bulkHandler(req);
 		});
 		this.handlers.set("GET:/api/workspaces", () => workspacesHandler());
+		this.handlers.set("GET:/api/requests/search", (req, url) => searchHandler(req, url));
 	}
 
 	/**
