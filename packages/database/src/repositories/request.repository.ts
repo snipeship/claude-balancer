@@ -163,7 +163,10 @@ export class RequestRepository extends BaseRepository<RequestData> {
 
 		// Also update FTS table with decoded content
 		try {
-			const payload = data as any;
+			const payload = data as {
+				request?: { body?: string };
+				response?: { body?: string };
+			};
 			const requestBody = this.decodeBase64Content(payload.request?.body || "");
 			const responseBody = this.decodeBase64Content(
 				payload.response?.body || "",
@@ -552,7 +555,7 @@ export class RequestRepository extends BaseRepository<RequestData> {
 			JOIN requests r ON fts.id = r.id
 			LEFT JOIN accounts a ON r.account_used = a.id
 			WHERE ${whereClause}
-			ORDER BY fts.rank
+			ORDER BY r.timestamp DESC
 			LIMIT ? OFFSET ?
 		`,
 			params,

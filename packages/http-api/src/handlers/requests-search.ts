@@ -161,7 +161,7 @@ export function createRequestsSearchHandler(dbOps: DatabaseOperations) {
 				${filters.dateTo ? " AND r.timestamp <= ?" : ""}
 				${filters.model ? " AND r.model = ?" : ""}
 				${filters.agentUsed ? " AND r.agent_used = ?" : ""}
-				ORDER BY fts.rank
+				ORDER BY r.timestamp DESC
 				LIMIT ? OFFSET ?
 			`);
 
@@ -209,9 +209,9 @@ export function createRequestsSearchHandler(dbOps: DatabaseOperations) {
 				// Escape regex special characters in search term
 				const escapedTerm = searchTerm.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 				const searchRegex = new RegExp(escapedTerm, "gi");
-				let match;
+				let match: RegExpExecArray | null = searchRegex.exec(text);
 
-				while ((match = searchRegex.exec(text)) !== null) {
+				while (match !== null) {
 					const matchStart = match.index;
 					const matchEnd = matchStart + match[0].length;
 
@@ -249,6 +249,9 @@ export function createRequestsSearchHandler(dbOps: DatabaseOperations) {
 					if (contextEnd < text.length) snippet = `${snippet}...`;
 
 					snippets.push(snippet.trim());
+
+					// Get next match
+					match = searchRegex.exec(text);
 				}
 
 				return snippets;
