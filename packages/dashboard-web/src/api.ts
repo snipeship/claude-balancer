@@ -305,6 +305,19 @@ class API extends HttpClient {
 			throw error;
 		}
 	}
+
+	async updateAccountsPriorities(
+		accountPriorities: Array<{ id: string; priority: number }>,
+	): Promise<void> {
+		try {
+			await this.post("/api/accounts/priorities", { accountPriorities });
+		} catch (error) {
+			if (error instanceof HttpError) {
+				throw new Error(error.message);
+			}
+			throw error;
+		}
+	}
 }
 
 export const api = new API();

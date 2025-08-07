@@ -6,6 +6,7 @@ import {
 	createAccountRenameHandler,
 	createAccountResumeHandler,
 	createAccountsListHandler,
+	createAccountsPriorityUpdateHandler,
 	createAccountTierUpdateHandler,
 } from "./handlers/accounts";
 import {
@@ -104,6 +105,13 @@ export class APIRouter {
 		this.handlers.set(
 			"POST:/api/accounts",
 			requireAuth((req) => accountAddHandler(req)),
+		);
+		this.handlers.set(
+			"POST:/api/accounts/priorities",
+			requireAuth((req) => {
+				const priorityHandler = createAccountsPriorityUpdateHandler(dbOps);
+				return priorityHandler(req);
+			}),
 		);
 		this.handlers.set(
 			"POST:/api/oauth/init",

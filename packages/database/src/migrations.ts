@@ -184,6 +184,14 @@ export function runMigrations(db: Database): void {
 		log.info("Added rate_limit_remaining column to accounts table");
 	}
 
+	// Add priority column if it doesn't exist
+	if (!accountsColumnNames.includes("priority")) {
+		db.prepare(
+			"ALTER TABLE accounts ADD COLUMN priority INTEGER DEFAULT 0",
+		).run();
+		log.info("Added priority column to accounts table");
+	}
+
 	// Check columns in requests table
 	const requestsInfo = db
 		.prepare("PRAGMA table_info(requests)")
@@ -279,6 +287,12 @@ export function runMigrations(db: Database): void {
 			"ALTER TABLE requests ADD COLUMN output_tokens_per_second REAL",
 		).run();
 		log.info("Added output_tokens_per_second column to requests table");
+	}
+
+	// Add client_ip column if it doesn't exist
+	if (!requestsColumnNames.includes("client_ip")) {
+		db.prepare("ALTER TABLE requests ADD COLUMN client_ip TEXT").run();
+		log.info("Added client_ip column to requests table");
 	}
 
 	// Add performance indexes

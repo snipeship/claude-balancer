@@ -128,6 +128,16 @@ export class DatabaseOperations implements StrategyStore, Disposable {
 		this.accounts.rename(accountId, newName);
 	}
 
+	updateAccountPriority(accountId: string, priority: number): void {
+		this.accounts.updatePriority(accountId, priority);
+	}
+
+	updateAccountsPriorities(
+		accountPriorities: Array<{ id: string; priority: number }>,
+	): void {
+		this.accounts.updateAccountsPriorities(accountPriorities);
+	}
+
 	resetAccountSession(accountId: string, timestamp: number): void {
 		this.accounts.resetSession(accountId, timestamp);
 	}
@@ -144,6 +154,7 @@ export class DatabaseOperations implements StrategyStore, Disposable {
 		accountUsed: string | null,
 		statusCode: number | null,
 		timestamp?: number,
+		clientIp?: string,
 	): void {
 		this.requests.saveMeta(
 			id,
@@ -152,6 +163,7 @@ export class DatabaseOperations implements StrategyStore, Disposable {
 			accountUsed,
 			statusCode,
 			timestamp,
+			clientIp,
 		);
 	}
 
@@ -167,6 +179,7 @@ export class DatabaseOperations implements StrategyStore, Disposable {
 		failoverAttempts: number,
 		usage?: RequestData["usage"],
 		agentUsed?: string,
+		clientIp?: string,
 	): void {
 		this.requests.save({
 			id,
@@ -180,6 +193,7 @@ export class DatabaseOperations implements StrategyStore, Disposable {
 			failoverAttempts,
 			usage,
 			agentUsed,
+			clientIp,
 		});
 	}
 

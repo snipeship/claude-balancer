@@ -1,7 +1,7 @@
 import type { Account } from "./account";
 
 export enum StrategyName {
-        Session = "session"
+	Session = "session",
 }
 
 /**
