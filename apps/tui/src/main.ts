@@ -185,12 +185,10 @@ Examples:
 	if (parsed.setModel) {
 		const config = new Config();
 		// Validate the model
-		const _validModels = [CLAUDE_MODEL_IDS.OPUS_4, CLAUDE_MODEL_IDS.SONNET_4];
 		const modelMap: Record<string, string> = {
 			"opus-4": CLAUDE_MODEL_IDS.OPUS_4,
 			"sonnet-4": CLAUDE_MODEL_IDS.SONNET_4,
-			[CLAUDE_MODEL_IDS.OPUS_4]: CLAUDE_MODEL_IDS.OPUS_4,
-			[CLAUDE_MODEL_IDS.SONNET_4]: CLAUDE_MODEL_IDS.SONNET_4,
+			"opus-4.1": CLAUDE_MODEL_IDS.OPUS_4_1,
 		};
 
 		const fullModel = modelMap[parsed.setModel];

@@ -2,7 +2,7 @@ import { agentRegistry } from "@ccflare/agents";
 import type { DatabaseOperations } from "@ccflare/database";
 import { errorResponse, jsonResponse } from "@ccflare/http-common";
 import type { AgentTool, AllowedModel } from "@ccflare/types";
-import { TOOL_PRESETS } from "@ccflare/types";
+import { ALLOWED_MODELS, TOOL_PRESETS } from "@ccflare/types";
 
 type ToolMode = keyof typeof TOOL_PRESETS | "custom";
 
@@ -37,13 +37,9 @@ export function createAgentUpdateHandler(dbOps: DatabaseOperations) {
 			}
 
 			if (body.model !== undefined) {
-				const ALLOWED_MODELS_ARRAY = [
-					"claude-opus-4-20250514",
-					"claude-sonnet-4-20250514",
-				] as const;
-				if (!ALLOWED_MODELS_ARRAY.includes(body.model)) {
+				if (!ALLOWED_MODELS.includes(body.model)) {
 					return errorResponse(
-						`Model must be one of: ${ALLOWED_MODELS_ARRAY.join(", ")}`,
+						`Model must be one of: ${ALLOWED_MODELS.join(", ")}`,
 					);
 				}
 				updates.model = body.model;
