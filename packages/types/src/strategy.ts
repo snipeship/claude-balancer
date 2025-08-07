@@ -1,11 +1,7 @@
 import type { Account } from "./account";
 
 export enum StrategyName {
-        Session = "session",
-        LeastRequests = "least-requests",
-        RoundRobin = "round-robin",
-        Weighted = "weighted",
-        WeightedRoundRobin = "weighted-round-robin",
+        Session = "session"
 }
 
 /**

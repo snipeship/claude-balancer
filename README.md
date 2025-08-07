@@ -54,11 +54,7 @@ export ANTHROPIC_BASE_URL=http://localhost:8080
 
 ### 🎯 Intelligent Load Balancing
 - **Strategies Supported**:
-  - **least-requests** – Route to the account with the fewest active requests (**default**).
-  - **round-robin** – Distribute requests evenly across all accounts.
   - **session** – Maintain session stickiness for up to 5 hours per account.
-  - **weighted** – Route based on tier-adjusted request count (e.g., 1x, 5x, 20x tiers).
-  - **weighted-round-robin** – Round-robin that gives more slots to higher-tier accounts.
 
 ### 📈 Real-Time Analytics
 - Token usage tracking per request
