@@ -46,6 +46,14 @@ class API extends HttpClient {
 		});
 	}
 
+	// Override request to include credentials
+	async request<T = unknown>(url: string, options?: RequestInit): Promise<T> {
+		return super.request<T>(url, {
+			...options,
+			credentials: "include",
+		});
+	}
+
 	async getStats(): Promise<Stats> {
 		return this.get<Stats>("/api/stats");
 	}

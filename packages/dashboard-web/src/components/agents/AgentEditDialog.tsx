@@ -1,11 +1,10 @@
-import { getModelDisplayName } from "@ccflare/core";
 import type {
 	Agent,
 	AgentTool,
 	AgentUpdatePayload,
 	AllowedModel,
 } from "@ccflare/types";
-import { ALL_TOOLS, ALLOWED_MODELS } from "@ccflare/types";
+import { ALL_TOOLS } from "@ccflare/types";
 import { Cpu, Edit3, FileText, Palette, Save, Shield, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { TOOL_PRESETS } from "../../constants";
@@ -74,6 +73,11 @@ const COLORS = [
 	{ name: "pink", class: "bg-pink-500" },
 	{ name: "indigo", class: "bg-indigo-500" },
 	{ name: "cyan", class: "bg-cyan-500" },
+];
+
+const ALLOWED_MODELS: AllowedModel[] = [
+	"claude-opus-4-20250514",
+	"claude-sonnet-4-20250514",
 ];
 
 const TOOL_MODE_INFO = {
@@ -431,7 +435,9 @@ export function AgentEditDialog({
 											<SelectItem key={m} value={m}>
 												<div className="flex items-center gap-2">
 													<Cpu className="h-4 w-4" />
-													{getModelDisplayName(m)}
+													{m.includes("opus")
+														? "Claude Opus 4"
+														: "Claude Sonnet 4"}
 													{m.includes("opus") && (
 														<Badge variant="secondary" className="ml-2 text-xs">
 															Advanced

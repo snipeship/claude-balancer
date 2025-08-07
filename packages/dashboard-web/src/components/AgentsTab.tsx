@@ -1,5 +1,4 @@
-import { DEFAULT_AGENT_MODEL, getModelDisplayName } from "@ccflare/core";
-import { ALLOWED_MODELS } from "@ccflare/types";
+import { CLAUDE_MODEL_IDS, DEFAULT_AGENT_MODEL } from "@ccflare/core";
 import {
 	AlertCircle,
 	Bot,
@@ -243,11 +242,12 @@ Your system prompt content here...`}
 											<SelectValue placeholder="Select a model" />
 										</SelectTrigger>
 										<SelectContent>
-											{ALLOWED_MODELS.map((model) => (
-												<SelectItem key={model} value={model}>
-													{getModelDisplayName(model)}
-												</SelectItem>
-											))}
+											<SelectItem value={CLAUDE_MODEL_IDS.OPUS_4}>
+												Claude Opus 4
+											</SelectItem>
+											<SelectItem value={CLAUDE_MODEL_IDS.SONNET_4}>
+												Claude Sonnet 4
+											</SelectItem>
 										</SelectContent>
 									</Select>
 								</div>
@@ -293,11 +293,12 @@ Your system prompt content here...`}
 													<SelectValue />
 												</SelectTrigger>
 												<SelectContent>
-													{ALLOWED_MODELS.map((model) => (
-														<SelectItem key={model} value={model}>
-															{getModelDisplayName(model)}
-														</SelectItem>
-													))}
+													<SelectItem value={CLAUDE_MODEL_IDS.OPUS_4}>
+														Claude Opus 4
+													</SelectItem>
+													<SelectItem value={CLAUDE_MODEL_IDS.SONNET_4}>
+														Claude Sonnet 4
+													</SelectItem>
 												</SelectContent>
 											</Select>
 										</div>

@@ -14,6 +14,7 @@ import {
 } from "./repositories/request.repository";
 import { StatsRepository } from "./repositories/stats.repository";
 import { StrategyRepository } from "./repositories/strategy.repository";
+import { UserRepository } from "./repositories/user.repository";
 
 export interface RuntimeConfig {
 	sessionDurationMs?: number;
@@ -34,6 +35,7 @@ export class DatabaseOperations implements StrategyStore, Disposable {
 	private strategy: StrategyRepository;
 	private stats: StatsRepository;
 	private agentPreferences: AgentPreferenceRepository;
+	private users: UserRepository;
 
 	constructor(dbPath?: string) {
 		const resolvedPath = dbPath ?? resolveDbPath();
@@ -59,6 +61,10 @@ export class DatabaseOperations implements StrategyStore, Disposable {
 		this.strategy = new StrategyRepository(this.db);
 		this.stats = new StatsRepository(this.db);
 		this.agentPreferences = new AgentPreferenceRepository(this.db);
+		this.users = new UserRepository(this.db);
+
+		// Initialize default user on first run
+		this.users.initializeDefaultUser();
 	}
 
 	setRuntimeConfig(runtime: RuntimeConfig): void {
@@ -346,5 +352,17 @@ export class DatabaseOperations implements StrategyStore, Disposable {
 	 */
 	getStatsRepository(): StatsRepository {
 		return this.stats;
+	}
+
+	// User operations delegated to repository
+	authenticateUser(username: string, password: string): boolean {
+		const user = this.users.findByUsername(username);
+		if (!user) return false;
+
+		const isValid = this.users.verifyPassword(password, user.passwordHash);
+		if (isValid) {
+			this.users.updateLastLogin(user.id);
+		}
+		return isValid;
 	}
 }

@@ -90,6 +90,20 @@ export function ensureSchema(db: Database): void {
 			updated_at INTEGER NOT NULL
 		)
 	`);
+
+	// Create users table for dashboard authentication
+	db.run(`
+		CREATE TABLE IF NOT EXISTS users (
+			id TEXT PRIMARY KEY,
+			username TEXT UNIQUE NOT NULL,
+			password_hash TEXT NOT NULL,
+			created_at INTEGER NOT NULL,
+			last_login INTEGER
+		)
+	`);
+
+	// Create index for faster username lookups
+	db.run(`CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)`);
 }
 
 export function runMigrations(db: Database): void {
