@@ -4,18 +4,19 @@ FROM oven/bun:latest
 # Set working directory
 WORKDIR /app
 
+# Copy package.json and bun.lockb
 COPY package.json bun.lock* ./
 
+# Copy the rest of the application
 COPY . .
-
-# COPY apps/*/package.json ./apps/
-# COPY packages/*/package.json ./packages/
 
 # Install dependencies
 RUN bun install
 
+# Build the project
 RUN bun run build
-# Expose port 8080 (based on CLAUDE.md)
+
+# Expose port 8080
 EXPOSE 8080
 
 # Run the server (not the TUI which requires interactive mode)
