@@ -10,6 +10,7 @@ interface AuthContextType {
 	isAuthenticated: boolean;
 	login: (username: string, password: string) => Promise<boolean>;
 	logout: () => void;
+	authEnabled: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -17,6 +18,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export function AuthProvider({ children }: { children: ReactNode }) {
 	const [isAuthenticated, setIsAuthenticated] = useState(false);
 	const [isLoading, setIsLoading] = useState(true);
+	const [authEnabled, setAuthEnabled] = useState(true);
 
 	// Check if already authenticated on mount
 	useEffect(() => {
@@ -25,9 +27,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 				const response = await fetch("/api/auth/check", {
 					credentials: "include",
 				});
-				setIsAuthenticated(response.ok);
+				
+				const data = await response.json();
+				setIsAuthenticated(data.authenticated);
+				
+				// Check if auth is enabled by looking for authEnabled field in response
+				// If not present, assume auth is enabled for backward compatibility
+				setAuthEnabled(data.authEnabled !== false);
 			} catch {
 				setIsAuthenticated(false);
+				setAuthEnabled(true); // Assume auth is enabled on error
 			} finally {
 				setIsLoading(false);
 			}
@@ -77,7 +86,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 	}
 
 	return (
-		<AuthContext.Provider value={{ isAuthenticated, login, logout }}>
+		<AuthContext.Provider value={{ isAuthenticated, login, logout, authEnabled }}>
 			{children}
 		</AuthContext.Provider>
 	);

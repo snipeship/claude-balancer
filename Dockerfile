@@ -16,6 +16,13 @@ RUN bun install
 # Build the project
 RUN bun run build
 
+# Environment variables with default values
+ENV PORT=8080
+ENV AUTH_ENABLED=false
+ENV LOG_LEVEL=INFO
+ENV LOG_FORMAT=pretty
+ENV LB_STRATEGY=session
+
 # Expose port 8080
 EXPOSE 8080
 

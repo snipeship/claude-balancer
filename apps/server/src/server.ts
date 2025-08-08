@@ -183,6 +183,7 @@ export default function startServer(options?: {
 		}
 	});
 
+	console.log(runtime)
 	// Main server
 	serverInstance = serve({
 		port: runtime.port,

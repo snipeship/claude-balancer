@@ -86,17 +86,28 @@ export const createLogoutHandler = () => {
 
 export const createAuthCheckHandler = () => {
 	return async (req: Request): Promise<Response> => {
+		// Check if auth is enabled via environment variable
+		const authEnabled = process.env.AUTH_ENABLED === 'true';
+		
+		// If auth is disabled, always return authenticated: true with authEnabled: false
+		if (!authEnabled) {
+			return new Response(JSON.stringify({ authenticated: true, authEnabled: false }), {
+				status: 200,
+				headers: { "Content-Type": "application/json" },
+			});
+		}
+		
 		const token = getSessionToken(req);
 		const isValid = verifySession(token);
 
 		if (!isValid) {
-			return new Response(JSON.stringify({ authenticated: false }), {
+			return new Response(JSON.stringify({ authenticated: false, authEnabled: true }), {
 				status: 401,
 				headers: { "Content-Type": "application/json" },
 			});
 		}
 
-		return new Response(JSON.stringify({ authenticated: true }), {
+		return new Response(JSON.stringify({ authenticated: true, authEnabled: true }), {
 			status: 200,
 			headers: { "Content-Type": "application/json" },
 		});
@@ -108,6 +119,14 @@ export function requireAuth(
 	handler: (req: Request, url: URL) => Response | Promise<Response>,
 ) {
 	return async (req: Request, url: URL): Promise<Response> => {
+		// Check if auth is enabled via environment variable
+		const authEnabled = process.env.AUTH_ENABLED === 'true';
+		
+		// Skip auth check if disabled
+		if (!authEnabled) {
+			return handler(req, url);
+		}
+		
 		const token = getSessionToken(req);
 		if (!verifySession(token)) {
 			return new Response(JSON.stringify({ error: "Unauthorized" }), {

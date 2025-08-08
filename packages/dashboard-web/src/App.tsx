@@ -16,9 +16,11 @@ const queryClient = new QueryClient({
 });
 
 function AppContent() {
-	const { isAuthenticated, login } = useAuth();
+	const { isAuthenticated, login, authEnabled } = useAuth();
 
-	if (!isAuthenticated) {
+	// If auth is disabled, go directly to dashboard
+	// If auth is enabled but user is not authenticated, show login page
+	if (authEnabled && !isAuthenticated) {
 		return <LoginPage onLogin={login} />;
 	}
 
