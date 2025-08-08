@@ -869,7 +869,7 @@ API endpoints (`/api/*`) do not require authentication for backward compatibilit
 
 ### Dashboard Authentication
 
-The web dashboard (`/dashboard`) requires authentication:
+The web dashboard (`/dashboard`) does not require authentication, unless enabled with an environment variable `AUTH_ENABLED=(boolean)`. If enabled, default credentials are `ccflare_user` for the username, and `ccflare_password` for the password.
 
 #### POST /api/auth/login
 
